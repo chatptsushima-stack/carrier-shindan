@@ -45,6 +45,7 @@
     line-height:1.5;
     letter-spacing:.02em;
     padding:8px 12px;
+    z-index:4;
   }
 
   /* ステータスバー */
@@ -68,7 +69,8 @@
   .overlay{
     position:absolute; inset:0; display:flex; flex-direction:column;
     align-items:center; justify-content:center; text-align:center; gap:14px;
-    padding:24px; background:radial-gradient(circle at 50% 35%,#15205c 0,#05060d 75%);
+    padding:24px 24px 70px; background:radial-gradient(circle at 50% 35%,#15205c 0,#05060d 75%);
+    z-index:3;
   }
   .overlay h1{
     font-size:clamp(22px,7vw,40px); letter-spacing:.06em; line-height:1.25;
@@ -125,8 +127,8 @@
     <div class="sub">DRAGON SAGA</div>
     <h1>ひかりの<span class="y">勇者</span></h1>
     <p class="story">闇の魔王ザラムが、世界をてらす「ひかりの宝玉」を奪い去った。<br>勇者の血を引く少年アレンの、ちいさな冒険がいま始まる。</p>
-    <div class="blink">― おして はじめる ―</div>
-    <div class="sub" style="margin-top:8px">キーボード: 矢印で移動 / Z=決定・話す / X=メニュー</div>
+    <div class="sub" style="margin-top:4px">▲▼で選び A／Zキー（または A ボタン）で決定</div>
+    <div class="sub">移動＝矢印 ／ 話す・決定＝Z ／ メニュー＝X・Enter</div>
   </div>
 
   <!-- エンディング -->
@@ -225,6 +227,7 @@ const MAPS = {
           "北へ 行き 魔王を たおし、宝玉を 取り返すのじゃ！",
           "…これは わずかだが 旅の そなえに。","村長から 100ゴールド と やくそう3個 を うけとった！",
         ],
+        linesDone:[ "世界の 命運は おぬしに かかっておる。","村の 道具屋で やくそうを、ぶき屋で","つるぎや よろいを ととのえると よいぞ。","北の どうくつへ 急ぐのじゃ！" ],
         give:{ gold:100, herb:3 } },
       { x:13, y:9, name:"へいし", pal:{body:"#3a6ea5",hair:"#333333"},
         lines:[
@@ -235,6 +238,9 @@ const MAPS = {
         ] },
       { x:13, y:4, name:"村人", pal:{body:"#3f9e5a",hair:"#5a3a1a"},
         lines:[ "魔王が あらわれてから まものが ふえた…","フィールドを 歩けば すぐ 戦いになる。","レベルを 上げてから 北へ 向かうんだよ。" ] },
+      { x:3, y:6, name:"どうぐ屋", pal:{body:"#1f9d8a",hair:"#3a2a18"}, shop:"item" },
+      { x:3, y:10, name:"ぶき屋", pal:{body:"#8a6a2a",hair:"#222222"}, shop:"weapon" },
+      { x:14, y:6, name:"宿屋の主人", pal:{body:"#b06a3a",hair:"#5a3a1a"}, inn:true, innCost:10 },
     ],
   },
 
@@ -322,6 +328,48 @@ const LEARN = { 2:["mera"], 4:["behomi"], 6:["merami"] };
 // 次のレベルに必要な累計経験値
 const EXP_TABLE = [0, 0, 7, 18, 34, 56, 88, 130, 185, 255, 340];
 
+/* ---------------- 装備品 ---------------- */
+const EQUIP = {
+  // ぶき（atk）
+  copper: { name:"どうのつるぎ",   slot:"weapon", atk:7,  price:140 },
+  iron:   { name:"はがねのつるぎ", slot:"weapon", atk:15, price:520 },
+  flame:  { name:"ほのおのつるぎ", slot:"weapon", atk:26, price:1500 },
+  // ぼうぐ（def）
+  leather:{ name:"かわのよろい",   slot:"armor",  def:7,  price:120 },
+  chain:  { name:"くさりかたびら", slot:"armor",  def:13, price:380 },
+  plate:  { name:"てつのよろい",   slot:"armor",  def:22, price:1000 },
+};
+
+/* ---------------- どうぐ（消費アイテム） ---------------- */
+const ITEMS = {
+  herb:  { name:"やくそう",       use:"hp", power:30, msg:"HPが {n} 回復した！" },
+  ether: { name:"まほうの聖水",   use:"mp", power:20, msg:"MPが {n} 回復した！" },
+};
+
+/* ---------------- お店の品ぞろえ ---------------- */
+const SHOPS = {
+  item: {
+    title:"どうぐ屋",
+    greet:["いらっしゃい！","旅に そなえは 大事だよ。","なにを 買って いくかい？"],
+    goods:[
+      { kind:"item",  key:"herb",  price:8  },
+      { kind:"item",  key:"ether", price:30 },
+    ],
+  },
+  weapon: {
+    title:"ぶき・ぼうぐ屋",
+    greet:["へい、らっしゃい！","いい ぶきと よろいが そろってるぜ。"],
+    goods:[
+      { kind:"weapon", key:"copper" },
+      { kind:"weapon", key:"iron" },
+      { kind:"weapon", key:"flame" },
+      { kind:"armor",  key:"leather" },
+      { kind:"armor",  key:"chain" },
+      { kind:"armor",  key:"plate" },
+    ],
+  },
+};
+
 /* ---------------- プレイヤー初期状態 ---------------- */
 function newPlayer(){
   return {
@@ -332,16 +380,21 @@ function newPlayer(){
     lv:1, exp:0,
     hp:22, maxhp:22, mp:6, maxmp:6,
     atk:9, def:5, gold:0,
-    items:{ herb:0 },
+    items:{ herb:0, ether:0 },
+    weapon:null, armor:null,        // 装備（EQUIPのキー）
     spells:["homi"],
     flags:{},
   };
 }
 let P = newPlayer();
 
+/* 装備込みの こうげき力・しゅび力 */
+function patk(){ return P.atk + (P.weapon ? EQUIP[P.weapon].atk : 0); }
+function pdef(){ return P.def + (P.armor ? EQUIP[P.armor].def : 0); }
+
 /* ---------------- ゲーム状態 ---------------- */
 const game = {
-  state:"title",        // title / field / dialogue / fieldmenu / battle / ending
+  state:"title",        // title / field / dialogue / menu / battle / cutscene / ending
   stepsSince:0,
   // 会話
   dlg:{ queue:[], onEnd:null },
@@ -388,28 +441,31 @@ document.querySelectorAll("[data-btn]").forEach(b=>{
 
 /* 方向キー：状態に応じて移動 or メニュー選択 */
 function pressDir(d){
+  ensureAudio();
   if(game.state==="field"){ /* フレーム毎に処理 */ }
-  else if(game.state==="fieldmenu"){ moveSel(d); }
   else if(game.state==="battle"){ btDir(d); }
+  else if(game.menu){ moveSel(d); }
 }
 function pressAction(){
+  ensureAudio();
   // バトル勝利後などの演出メッセージ送りは状態に関係なく最優先
   if(seq){ seqNext(); return; }
   switch(game.state){
-    case "title":    startGame(); break;
+    case "title":    selectMenu(); break;
     case "field":    interact(); break;
     case "dialogue": advanceDialogue(); break;
-    case "fieldmenu":selectMenu(); break;
+    case "menu":     selectMenu(); break;
     case "battle":   btAction(); break;
     case "ending":   toTitle(); break;
   }
 }
 function pressCancel(){
+  ensureAudio();
   switch(game.state){
-    case "field":     openFieldMenu(); break;
-    case "fieldmenu": closeFieldMenu(); break;
-    case "dialogue":  advanceDialogue(); break;
-    case "battle":    btCancel(); break;
+    case "field":    openFieldMenu(); break;
+    case "menu":     menuCancel(); break;
+    case "dialogue": advanceDialogue(); break;
+    case "battle":   btCancel(); break;
   }
 }
 
@@ -417,19 +473,27 @@ function pressCancel(){
    ゲーム開始・画面遷移
 =================================================================== */
 function startGame(){
-  P = newPlayer();
+  P = newPlayer(); applyWorldState();
   document.getElementById("title").classList.add("hidden");
   document.getElementById("hud").classList.remove("hidden");
+  hideMsg(); hideCmd(); game.menu=null;
   game.state = "field";
   updateHUD();
+  playBGM("town");
 }
-function toTitle(){
+function showTitle(){
   document.getElementById("ending").classList.add("hidden");
   document.getElementById("hud").classList.add("hidden");
-  hideMsg(); hideCmd();
   document.getElementById("title").classList.remove("hidden");
+  hideMsg();
   game.state = "title";
+  setMenu([
+    {label:"はじめから", act:startGame},
+    {label:"つづきから", dim:!hasSave(), act:()=>{ if(hasSave()) loadGame(); }},
+  ], { pos:"title" });
+  playBGM("title");
 }
+function toTitle(){ showTitle(); }
 
 /* ===================================================================
    フィールド移動
@@ -494,6 +558,7 @@ function doWarp(w){
   P.px=P.x*TILE; P.py=P.y*TILE; P.moving=false;
   game.stepsSince=0;
   flashLocation(MAPS[w.to].name);
+  playBGM(bgmForState());
 }
 let locFlash={t:0,name:""};
 function flashLocation(name){ locFlash={t:1.6,name}; }
@@ -511,15 +576,25 @@ function interact(){
    会話
 =================================================================== */
 function talkTo(n){
+  if(n.shop){ openShop(n); return; }
+  if(n.inn){ openInn(n); return; }
+  const claimed = n.give && P.flags["gift_"+n.name];
+  const lines = (claimed && n.linesDone) ? n.linesDone : n.lines;
   const onEnd = ()=>{
-    if(n.give){
+    if(n.give && !P.flags["gift_"+n.name]){
       if(n.give.gold) P.gold += n.give.gold;
       if(n.give.herb) P.items.herb += n.give.herb;
-      n.give=null; updateHUD();
+      P.flags["gift_"+n.name]=true; updateHUD();
     }
     if(n.boss){ startBattle("zaram", n); }
   };
-  showDialogue(n.lines, n.name, onEnd);
+  showDialogue(lines, n.name, onEnd);
+}
+
+/* セーブ／ロード時に、フラグから世界の状態（討伐済みの魔王など）を復元 */
+function applyWorldState(){
+  for(const m of Object.values(MAPS)) for(const n of (m.npcs||[])) n.gone=false;
+  if(P.flags.bossDead){ const z=(MAPS.cave.npcs||[]).find(n=>n.boss); if(z) z.gone=true; }
 }
 function showDialogue(lines, speaker, onEnd){
   game.state="dialogue";
@@ -542,57 +617,184 @@ function endDialogue(){
 }
 
 /* ===================================================================
-   フィールドメニュー（つよさ／どうぐ）
+   汎用リストメニュー
 =================================================================== */
-function openFieldMenu(){
-  if(P.moving) return;
-  game.state="fieldmenu";
-  game.menu = { ctx:"root", sel:0, items:[
-    {label:"つよさ", act:showStatus},
-    {label:"どうぐ", act:openItems},
-    {label:"とじる", act:closeFieldMenu},
-  ]};
+function setMenu(items, opts){
+  opts = opts||{};
+  game.menu = { items, sel:opts.sel||0, onCancel:opts.onCancel||null,
+                pos:opts.pos||"field", title:opts.title||null };
   renderMenu();
 }
-function closeFieldMenu(){ hideCmd(); hideMsg(); game.state="field"; }
+function openMenu(items, opts){ game.state="menu"; setMenu(items, opts); }
+function closeMenu(){ hideCmd(); hideMsg(); game.menu=null; game.state="field"; }
 function moveSel(d){
-  if(d==="up")   game.menu.sel=(game.menu.sel-1+game.menu.items.length)%game.menu.items.length;
-  if(d==="down") game.menu.sel=(game.menu.sel+1)%game.menu.items.length;
+  const m=game.menu; if(!m || !m.items.length) return;
+  if(d==="up"||d==="left")    m.sel=(m.sel-1+m.items.length)%m.items.length;
+  if(d==="down"||d==="right") m.sel=(m.sel+1)%m.items.length;
   renderMenu();
 }
 function selectMenu(){
-  const it=game.menu.items[game.menu.sel];
-  if(it && !it.dim && it.act) it.act();
+  const it=game.menu && game.menu.items[game.menu.sel];
+  if(it && !it.dim && it.act){ playSfx("confirm"); it.act(); }
+}
+function menuCancel(){
+  const cb=game.menu && game.menu.onCancel;
+  playSfx("cancel");
+  if(cb) cb(); else closeMenu();
+}
+
+/* ===================================================================
+   フィールドメニュー
+=================================================================== */
+function openFieldMenu(){
+  if(P.moving) return;
+  hideMsg();
+  openMenu([
+    {label:"つよさ",         act:showStatus},
+    {label:"どうぐ",         act:openItemsMenu},
+    {label:"そうび",         act:showEquip},
+    {label:"ぼうけんのしょ", act:openSaveMenu},
+    {label:"BGM "+(audioOn?"ON":"OFF"), act:toggleBGMmenu},
+    {label:"とじる",         act:closeMenu},
+  ], { onCancel:closeMenu });
+}
+function infoScreen(text){
+  showMsg(text, false);
+  openMenu([{label:"もどる", act:openFieldMenu}], { onCancel:openFieldMenu });
 }
 function showStatus(){
   const sp = P.spells.map(s=>SPELLS[s].name).join("・") || "なし";
   const nextExp = EXP_TABLE[P.lv+1] ? (EXP_TABLE[P.lv+1]-P.exp)+" で レベルアップ" : "MAX";
-  showMsg(
+  infoScreen(
     `【${P.name}】 レベル ${P.lv}\n`+
     `HP ${P.hp}/${P.maxhp}  MP ${P.mp}/${P.maxmp}\n`+
-    `こうげき力 ${P.atk}  しゅび力 ${P.def}\n`+
+    `こうげき力 ${patk()}  しゅび力 ${pdef()}\n`+
     `じゅもん：${sp}\n`+
-    `所持金 ${P.gold}G ／ 次まで ${nextExp}`, false);
+    `所持金 ${P.gold}G ／ 次まで ${nextExp}`);
 }
-function openItems(){
-  game.menu = { ctx:"items", sel:0, items:[
-    {label:`やくそう ×${P.items.herb}`, act:useHerbField, dim:P.items.herb<=0},
-    {label:"もどる", act:openFieldMenu},
-  ]};
-  renderMenu();
+function showEquip(){
+  const w=P.weapon?EQUIP[P.weapon]:null, a=P.armor?EQUIP[P.armor]:null;
+  infoScreen(
+    `そうび\n`+
+    `ぶき　：${w?w.name+`（攻+${w.atk}）`:"なし"}\n`+
+    `よろい：${a?a.name+`（守+${a.def}）`:"なし"}\n\n`+
+    `こうげき力 ${patk()}  しゅび力 ${pdef()}`);
 }
-function useHerbField(){
-  if(P.items.herb<=0) return;
-  if(P.hp>=P.maxhp){ showMsg("HPは まんたんだ。", false); return; }
-  P.items.herb--; const heal=Math.min(30, P.maxhp-P.hp); P.hp+=heal; updateHUD();
-  showMsg(`やくそうを 使った。\nHPが ${heal} 回復した！`, false);
-  // メニューは閉じてフィールドへ
-  game.state="fieldmenu";
-  game.menu={ctx:"items",sel:0,items:[
-    {label:`やくそう ×${P.items.herb}`, act:useHerbField, dim:P.items.herb<=0},
-    {label:"もどる", act:openFieldMenu},
-  ]};
-  renderMenu();
+function openItemsMenu(){
+  const items=[];
+  for(const key of Object.keys(ITEMS)){
+    const c=P.items[key]||0;
+    items.push({ label:`${ITEMS[key].name} ×${c}`, dim:c<=0, act:()=>useItemField(key) });
+  }
+  items.push({label:"もどる", act:openFieldMenu});
+  openMenu(items, { onCancel:openFieldMenu });
+}
+function useItemField(key){
+  const r=applyItem(key);
+  if(!r.ok){ showMsg(r.msg, false); return; }
+  updateHUD(); playSfx("heal");
+  showMsg(r.msg, false);
+  openItemsMenu(); // 個数を更新して再表示
+}
+/* どうぐの効果を適用（戦闘・フィールド共通） */
+function applyItem(key){
+  if((P.items[key]||0)<=0) return { ok:false, msg:"もう ない。" };
+  const it=ITEMS[key];
+  if(it.use==="hp"){
+    if(P.hp>=P.maxhp) return { ok:false, msg:"HPは まんたんだ。" };
+    const n=Math.min(it.power, P.maxhp-P.hp); P.hp+=n; P.items[key]--;
+    return { ok:true, n, msg:it.msg.replace("{n}", n) };
+  }
+  if(it.use==="mp"){
+    if(P.mp>=P.maxmp) return { ok:false, msg:"MPは まんたんだ。" };
+    const n=Math.min(it.power, P.maxmp-P.mp); P.mp+=n; P.items[key]--;
+    return { ok:true, n, msg:it.msg.replace("{n}", n) };
+  }
+  return { ok:false, msg:"" };
+}
+
+/* ===================================================================
+   ぼうけんのしょ（セーブ／ロード）
+=================================================================== */
+function openSaveMenu(){
+  openMenu([
+    {label:"セーブする", act:doSave},
+    {label:"ロードする", dim:!hasSave(), act:()=>{ if(hasSave()) loadGame(); }},
+    {label:"もどる",     act:openFieldMenu},
+  ], { onCancel:openFieldMenu });
+}
+function doSave(){
+  const ok=saveGame();
+  infoScreen(ok ? "ぼうけんのしょに きろくしました。" : "きろくに しっぱいしました…");
+}
+function toggleBGMmenu(){ setBGMOn(!audioOn); openFieldMenu(); }
+
+/* ===================================================================
+   お店
+=================================================================== */
+function openShop(n){
+  const shop=SHOPS[n.shop];
+  showDialogue(shop.greet, n.name, ()=> shopMenu(n.shop, n.name));
+}
+function goodInfo(g){
+  if(g.kind==="item"){ return { name:ITEMS[g.key].name, price:g.price, tag:"" }; }
+  const eq=EQUIP[g.key];
+  const stat = eq.slot==="weapon" ? `(攻+${eq.atk})` : `(守+${eq.def})`;
+  const owned = (eq.slot==="weapon" && P.weapon===g.key) || (eq.slot==="armor" && P.armor===g.key);
+  return { name:eq.name+stat, price:eq.price, tag: owned ? " ★装備中" : "" };
+}
+function shopMenu(type, who){
+  const shop=SHOPS[type];
+  const items=shop.goods.map(g=>{
+    const info=goodInfo(g);
+    return { label:`${info.name}　${info.price}G${info.tag}`, dim:P.gold<info.price, act:()=>buyGood(type,who,g) };
+  });
+  items.push({label:"やめる", act:()=>closeShop(who)});
+  showMsg(`所持金 ${P.gold}G　なにを 買う？`, false);
+  openMenu(items, { onCancel:()=>closeShop(who), title:shop.title });
+}
+function buyGood(type, who, g){
+  const info=goodInfo(g);
+  if(P.gold<info.price){ showMsg("お金が たりないよ。", false); return; }
+  if(g.kind!=="item"){
+    const eq=EQUIP[g.key];
+    if((eq.slot==="weapon"&&P.weapon===g.key)||(eq.slot==="armor"&&P.armor===g.key)){
+      showMsg("それは もう そうびしているよ。", false); return;
+    }
+  }
+  P.gold-=info.price; playSfx("confirm");
+  let msg;
+  if(g.kind==="item"){ P.items[g.key]=(P.items[g.key]||0)+1; msg=`${ITEMS[g.key].name}を 手に入れた！`; }
+  else { const eq=EQUIP[g.key]; P[eq.slot]=g.key; msg=`${eq.name}を そうびした！`; }
+  updateHUD();
+  showMsg(`${msg}\n（のこり ${P.gold}G）`, false);
+  shopMenu(type, who);
+}
+function closeShop(who){ showDialogue(["まいど ありがとう！"], who, closeMenu); }
+
+/* ===================================================================
+   宿屋
+=================================================================== */
+function openInn(n){
+  const cost=n.innCost||10;
+  showDialogue(["いらっしゃいませ。", `ひとばん ${cost}ゴールドで おとまりできます。`], n.name, ()=>innConfirm(n,cost));
+}
+function innConfirm(n, cost){
+  showMsg(`${cost}G で おとまりに なりますか？`, false);
+  openMenu([
+    {label:"はい",   act:()=>innStay(n,cost)},
+    {label:"いいえ", act:()=>showDialogue(["また どうぞ。"], n.name, closeMenu)},
+  ], { onCancel:()=>showDialogue(["また どうぞ。"], n.name, closeMenu) });
+}
+function innStay(n, cost){
+  if(P.gold<cost){ showDialogue(["おや、お金が たりないようですね…"], n.name, closeMenu); return; }
+  P.gold-=cost; updateHUD();
+  game.state="cutscene"; hideCmd();
+  showMsg("……おやすみなさい……", false);
+  setTimeout(()=>{
+    P.hp=P.maxhp; P.mp=P.maxmp; updateHUD(); playSfx("heal");
+    showDialogue(["おはようございます。","すっかり 元気に なりましたよ！"], n.name, closeMenu);
+  }, 1000);
 }
 
 /* ===================================================================
@@ -607,7 +809,9 @@ function startBattle(enemyKey, npc){
               shakeT:0, flashT:0, enemyFlash:0, intro:1.2 };
   game.state="battle";
   hideMsg();
-  btLog((e.boss?"":"")+`${e.name}が あらわれた！`);
+  playSfx("encounter");
+  playBGM(e.boss ? "boss" : "battle");
+  btLog(`${e.name}が あらわれた！`);
   setBattleMenu("root");
 }
 function btLog(t){ showMsg(t, false); }
@@ -630,10 +834,13 @@ function setBattleMenu(which){
     game.menu={items, sel:0, ctx:"bt-spell"};
   }
   if(which==="item"){
-    game.menu={items:[
-      {label:`やくそう ×${P.items.herb}`, dim:P.items.herb<=0, act:()=>btHerb()},
-      {label:"もどる", act:()=>setBattleMenu("root")},
-    ], sel:0, ctx:"bt-item"};
+    const items=[];
+    for(const key of Object.keys(ITEMS)){
+      const c=P.items[key]||0;
+      items.push({ label:`${ITEMS[key].name} ×${c}`, dim:c<=0, act:()=>btItem(key) });
+    }
+    items.push({label:"もどる", act:()=>setBattleMenu("root")});
+    game.menu={items, sel:0, ctx:"bt-item"};
   }
   renderMenu();
 }
@@ -671,8 +878,8 @@ function playerThenEnemy(playerActText, afterPlayer){
 function btAttack(){
   const bt=game.bt, e=bt.enemy;
   playerThenEnemy(`${P.name}の こうげき！`, ()=>{
-    const dmg=calcDmg(P.atk, e.def);
-    e.hp-=dmg; bt.enemyFlash=0.4; bt.shakeT=0.35;
+    const dmg=calcDmg(patk(), e.def);
+    e.hp-=dmg; bt.enemyFlash=0.4; bt.shakeT=0.35; playSfx("hit");
     btLog(`${P.name}の こうげき！\n${e.name}に ${dmg}の ダメージ！`);
   });
 }
@@ -683,24 +890,25 @@ function btCast(key){
   if(s.type==="heal"){
     playerThenEnemy(`${P.name}は ${s.name}を となえた！`, ()=>{
       const heal=Math.min(rnd(s.lo,s.hi), P.maxhp-P.hp);
-      P.hp+=heal; bt.flashT=0.4;
+      P.hp+=heal; bt.flashT=0.4; playSfx("heal");
       btLog(`${P.name}は ${s.name}を となえた！\nHPが ${heal} 回復した！`);
     });
   } else {
     playerThenEnemy(`${P.name}は ${s.name}を となえた！`, ()=>{
       const dmg=rnd(s.lo,s.hi);
-      e.hp-=dmg; bt.enemyFlash=0.5; bt.shakeT=0.4;
+      e.hp-=dmg; bt.enemyFlash=0.5; bt.shakeT=0.4; playSfx("hit");
       btLog(`${P.name}は ${s.name}を となえた！\n${e.name}に ${dmg}の ダメージ！`);
     });
   }
 }
-function btHerb(){
-  if(P.items.herb<=0) return;
-  const bt=game.bt;
-  P.items.herb--;
-  playerThenEnemy(`${P.name}は やくそうを 使った！`, ()=>{
-    const heal=Math.min(30, P.maxhp-P.hp); P.hp+=heal; bt.flashT=0.3;
-    btLog(`${P.name}は やくそうを 使った！\nHPが ${heal} 回復した！`);
+function btItem(key){
+  const it=ITEMS[key];
+  if((P.items[key]||0)<=0) return;
+  if(it.use==="hp" && P.hp>=P.maxhp){ btLog("HPは まんたんだ。"); return; }
+  if(it.use==="mp" && P.mp>=P.maxmp){ btLog("MPは まんたんだ。"); return; }
+  playerThenEnemy(`${P.name}は ${it.name}を 使った！`, ()=>{
+    const r=applyItem(key); game.bt.flashT=0.3; playSfx("heal");
+    btLog(`${P.name}は ${it.name}を 使った！\n${r.msg}`);
   });
 }
 function btFlee(){
@@ -729,10 +937,10 @@ function enemyTurn(){
     btLog(text); afterEnemy(); return;
   }
   if(e.boss && Math.random()<0.35){
-    dmg=Math.max(1, calcDmg(e.atk+8, P.def));
+    dmg=Math.max(1, calcDmg(e.atk+8, pdef()));
     text=`${e.name}の やみの ブレス！\n${P.name}に ${dmg}の ダメージ！`;
   } else {
-    dmg=calcDmg(e.atk, P.def);
+    dmg=calcDmg(e.atk, pdef());
     text=`${e.name}の こうげき！\n${P.name}に ${dmg}の ダメージ！`;
   }
   P.hp-=dmg; bt.flashT=0.45; bt.shakeT=0.45; updateHUD();
@@ -759,7 +967,7 @@ function checkLevelUp(){
   while(EXP_TABLE[P.lv+1]!==undefined && P.exp>=EXP_TABLE[P.lv+1]){
     P.lv++;
     P.maxhp+=7; P.maxmp+=3; P.atk+=3; P.def+=2;
-    P.hp=P.maxhp; P.mp=P.maxmp;
+    P.hp=P.maxhp; P.mp=P.maxmp; playSfx("level");
     out.push(`${P.name}は レベル ${P.lv} に あがった！\nHP・MP・力が 上がった！`);
     if(LEARN[P.lv]){
       for(const k of LEARN[P.lv]){ if(!P.spells.includes(k)){ P.spells.push(k); out.push(`じゅもん『${SPELLS[k].name}』を おぼえた！`); } }
@@ -770,6 +978,7 @@ function checkLevelUp(){
 function bossDefeated(){
   const bt=game.bt;
   if(bt.npc) bt.npc.gone=true; // 魔王を消す
+  P.flags.bossDead=true;
   showSequence([
     "魔王ザラムを たおした！",
     "ザラムの からだは 闇に とけて 消えていった…",
@@ -783,6 +992,7 @@ function bossDefeated(){
 function endBattle(){
   game.bt=null; hideMsg(); hideCmd();
   game.state="field"; updateHUD();
+  playBGM(bgmForState());
 }
 function gameOver(){
   showSequence([
@@ -796,6 +1006,7 @@ function gameOver(){
     P.map="village"; P.x=8; P.y=9; P.dir="up"; P.px=P.x*TILE; P.py=P.y*TILE;
     P.moving=false; game.bt=null;
     game.state="field"; hideMsg(); hideCmd(); updateHUD();
+    playBGM("town");
   });
 }
 
@@ -831,15 +1042,22 @@ function showMsg(text, cursor){
 }
 function hideMsg(){ elMsg.classList.add("hidden"); }
 function renderMenu(){
+  if(!game.menu) return;
   elCmd.classList.remove("hidden");
-  // バトル時はコマンド窓を右下、フィールドは左下寄り
-  if(game.state==="battle"){ elCmd.style.right="8px"; elCmd.style.left="auto"; elCmd.style.bottom="78px"; elCmd.style.top="auto"; }
-  else { elCmd.style.left="8px"; elCmd.style.right="auto"; elCmd.style.top="8px"; elCmd.style.bottom="auto"; }
+  const pos = game.menu.pos || (game.state==="battle" ? "battle" : "field");
+  // 位置リセット
+  elCmd.style.left=elCmd.style.right=elCmd.style.top=elCmd.style.bottom="auto";
+  elCmd.style.transform="none";
+  if(pos==="battle"){ elCmd.style.right="8px"; elCmd.style.bottom="78px"; }
+  else if(pos==="title"){ elCmd.style.left="50%"; elCmd.style.bottom="42px"; elCmd.style.transform="translateX(-50%)"; elCmd.style.textAlign="center"; }
+  else { elCmd.style.left="8px"; elCmd.style.top="8px"; }
+  if(pos!=="title") elCmd.style.textAlign="left";
+  const head = game.menu.title ? `<div style="border-bottom:1px solid #fff;margin-bottom:4px;padding-bottom:2px;color:#ffe14d">${game.menu.title}</div>` : "";
   const lis = game.menu.items.map((it,i)=>{
     const cls=[]; if(i===game.menu.sel)cls.push("sel"); if(it.dim)cls.push("dim");
     return `<li class="${cls.join(' ')}">${it.label}</li>`;
   }).join("");
-  elCmd.innerHTML = `<ul>${lis}</ul>`;
+  elCmd.innerHTML = head + `<ul>${lis}</ul>`;
 }
 function hideCmd(){ elCmd.classList.add("hidden"); }
 
@@ -1131,6 +1349,7 @@ function drawEnemySprite(kind, col, s, dead){
 =================================================================== */
 function showEnding(){
   game.bt=null; game.state="ending"; hideMsg(); hideCmd();
+  playBGM("ending");
   const el=document.getElementById("ending");
   el.innerHTML=`
     <div class="sub">― ENDING ―</div>
@@ -1144,6 +1363,165 @@ function showEnding(){
     </p>
     <div class="blink">A／Zキーで タイトルへ</div>`;
   el.classList.remove("hidden");
+}
+
+/* ===================================================================
+   セーブ／ロード（localStorage）
+=================================================================== */
+const SAVE_KEY="hikari_save_v1";
+function gatherSave(){
+  return {
+    v:1, name:P.name, map:P.map, x:P.x, y:P.y, dir:P.dir,
+    lv:P.lv, exp:P.exp, hp:P.hp, maxhp:P.maxhp, mp:P.mp, maxmp:P.maxmp,
+    atk:P.atk, def:P.def, gold:P.gold,
+    items:{...P.items}, weapon:P.weapon, armor:P.armor,
+    spells:[...P.spells], flags:{...P.flags},
+  };
+}
+function saveGame(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(gatherSave())); return true; }catch(e){ return false; } }
+function readSave(){ try{ const r=localStorage.getItem(SAVE_KEY); return r?JSON.parse(r):null; }catch(e){ return null; } }
+function hasSave(){ return !!readSave(); }
+function applySave(s){
+  P=newPlayer();
+  P.name=s.name; P.map=s.map; P.x=s.x; P.y=s.y; P.dir=s.dir||"down";
+  P.lv=s.lv; P.exp=s.exp; P.hp=s.hp; P.maxhp=s.maxhp; P.mp=s.mp; P.maxmp=s.maxmp;
+  P.atk=s.atk; P.def=s.def; P.gold=s.gold;
+  P.items=Object.assign({herb:0, ether:0}, s.items||{});
+  P.weapon=s.weapon||null; P.armor=s.armor||null;
+  P.spells=s.spells||["homi"]; P.flags=s.flags||{};
+  P.px=P.x*TILE; P.py=P.y*TILE; P.moving=false;
+  applyWorldState();
+}
+function loadGame(){
+  const s=readSave(); if(!s) return false;
+  applySave(s);
+  document.getElementById("title").classList.add("hidden");
+  document.getElementById("ending").classList.add("hidden");
+  document.getElementById("hud").classList.remove("hidden");
+  hideCmd(); hideMsg(); game.menu=null;
+  game.state="field"; updateHUD();
+  flashLocation(MAPS[P.map].name);
+  playBGM(bgmForState());
+  return true;
+}
+
+/* ===================================================================
+   サウンド（Web Audio チップチューン）
+=================================================================== */
+let actx=null, masterGain=null, audioReady=false, audioOn=true;
+let curBGMName=null, bgm=null;
+
+const SEMI={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+function noteFreq(n){
+  const m=/^([A-G])([#b]?)(\d)$/.exec(n); if(!m) return 0;
+  const semi=SEMI[m[1]] + (m[2]==="#"?1:m[2]==="b"?-1:0);
+  const midi=semi + (parseInt(m[3])+1)*12;
+  return 440*Math.pow(2,(midi-69)/12);
+}
+// 各曲：[音名, 8分音符の長さ] の列。lead と bass。
+const TUNES={
+  town:{ tempo:128, lead:[["E5",2],["G5",2],["C6",2],["B5",2],["A5",2],["G5",2],["E5",2],["D5",2],
+                          ["C5",2],["E5",2],["G5",2],["A5",2],["G5",2],["F5",2],["E5",4]],
+                    bass:[["C3",4],["G3",4],["A2",4],["E3",4],["F3",4],["C3",4],["G3",4],["G2",4]] },
+  field:{ tempo:144, lead:[["G5",2],["A5",2],["B5",2],["D6",2],["B5",2],["A5",2],["G5",4],
+                           ["E5",2],["G5",2],["A5",2],["B5",2],["A5",2],["G5",2],["D5",4]],
+                     bass:[["G3",4],["D3",4],["E3",4],["C3",4],["G3",4],["D3",4],["A2",4],["G2",4]] },
+  cave:{ tempo:96, lead:[["A4",2],["C5",2],["E5",2],["C5",2],["G4",2],["B4",2],["E5",2],["D5",2],
+                         ["A4",2],["F5",2],["E5",2],["D5",2],["C5",2],["B4",2],["A4",4]],
+                   bass:[["A2",4],["F2",4],["G2",4],["E2",4],["A2",4],["D2",4],["E2",4],["A2",4]] },
+  battle:{ tempo:172, lead:[["A4",1],["A4",1],["C5",1],["A4",1],["E5",2],["A4",2],["G4",1],["G4",1],["B4",1],["G4",1],["D5",2],["G4",2],
+                            ["A4",1],["C5",1],["E5",1],["A5",1],["G5",2],["E5",2],["F5",2],["E5",2]],
+                      bass:[["A2",2],["A2",2],["E2",2],["E2",2],["G2",2],["G2",2],["D2",2],["D2",2],
+                            ["A2",2],["A2",2],["E2",2],["E2",2],["F2",2],["F2",2],["E2",2],["E2",2]] },
+  boss:{ tempo:150, lead:[["D5",1],["D5",1],["Eb5",1],["D5",1],["A4",2],["Bb4",2],["A4",2],["G4",2],["F5",2],["E5",2],
+                          ["D5",1],["F5",1],["A5",1],["F5",1],["G5",2],["Bb5",2],["A5",4]],
+                    bass:[["D2",2],["D2",2],["D2",2],["A2",2],["Bb2",2],["Bb2",2],["A2",2],["A2",2],
+                          ["D2",2],["D2",2],["G2",2],["G2",2],["A2",2],["A2",2],["A2",2],["A2",2]] },
+};
+TUNES.title=TUNES.town;
+TUNES.ending=TUNES.town;
+
+function bgmForState(){
+  if(P.map==="cave") return "cave";
+  if(P.map==="field") return "field";
+  return "town";
+}
+function ensureAudio(){
+  if(audioReady){ if(actx.state==="suspended") actx.resume(); return; }
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext; if(!AC) return;
+    actx=new AC();
+    masterGain=actx.createGain(); masterGain.gain.value=0.16; masterGain.connect(actx.destination);
+    audioReady=true;
+  }catch(e){ return; }
+  if(actx.state==="suspended") actx.resume();
+  if(audioOn && curBGMName){ buildBGM(curBGMName); startLoop(); }
+}
+function compileTrack(seq, stepDur){
+  let t=0; const evs=[];
+  for(const [n,b] of seq){ if(n!=="-") evs.push({t, freq:noteFreq(n), dur:b*stepDur*0.92}); t+=b*stepDur; }
+  return { evs, len:t };
+}
+function buildBGM(name){
+  const tune=TUNES[name]; if(!tune) { bgm=null; return; }
+  const stepDur=(60/tune.tempo)/2;
+  const tracks=[];
+  const lead=compileTrack(tune.lead, stepDur); tracks.push({evs:lead.evs, wave:"square",   gain:0.5});
+  let len=lead.len;
+  if(tune.bass){ const bass=compileTrack(tune.bass, stepDur); tracks.push({evs:bass.evs, wave:"triangle", gain:0.55}); len=Math.max(len, bass.len); }
+  bgm={ tracks, len, timer:null, nextT:0 };
+}
+function scheduleNote(freq, t, dur, wave, vol){
+  if(!freq) return;
+  const o=actx.createOscillator(), g=actx.createGain();
+  o.type=wave; o.frequency.value=freq;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(vol, t+0.012);
+  g.gain.linearRampToValueAtTime(vol*0.65, t+dur*0.55);
+  g.gain.linearRampToValueAtTime(0.0001, t+dur);
+  o.connect(g).connect(masterGain);
+  o.start(t); o.stop(t+dur+0.03);
+}
+function scheduleIteration(startT){
+  const myBgm=bgm; if(!myBgm) return;
+  for(const tr of myBgm.tracks){ for(const ev of tr.evs){ scheduleNote(ev.freq, startT+ev.t, ev.dur, tr.wave, tr.gain); } }
+  myBgm.nextT=startT+myBgm.len;
+  myBgm.timer=setTimeout(()=>{ if(bgm===myBgm && audioOn) scheduleIteration(myBgm.nextT); }, Math.max(50,(myBgm.len-0.12)*1000));
+}
+function startLoop(){ if(!bgm||!audioReady) return; scheduleIteration(actx.currentTime+0.06); }
+function stopBGM(keepName){
+  if(bgm){ clearTimeout(bgm.timer); bgm=null; }
+  if(!keepName) curBGMName=null;
+}
+function playBGM(name){
+  if(name===curBGMName && bgm) return;
+  stopBGM(true);
+  curBGMName=name;
+  if(audioOn && audioReady && name && TUNES[name]){ buildBGM(name); startLoop(); }
+}
+function setBGMOn(on){
+  audioOn=on;
+  try{ localStorage.setItem("hikari_bgm", on?"1":"0"); }catch(e){}
+  if(on){ ensureAudio(); if(audioReady && curBGMName){ buildBGM(curBGMName); startLoop(); } }
+  else { stopBGM(true); }
+}
+function playSfx(type){
+  if(!audioReady || !audioOn) return;
+  const t=actx.currentTime;
+  const o=actx.createOscillator(), g=actx.createGain();
+  o.connect(g).connect(masterGain);
+  let f1=440,f2=440,dur=0.12,wave="square",vol=0.22;
+  if(type==="confirm"){ f1=680;f2=1020;dur=0.09; }
+  else if(type==="cancel"){ f1=420;f2=180;dur=0.10; }
+  else if(type==="hit"){ f1=200;f2=70;dur=0.15;wave="sawtooth";vol=0.26; }
+  else if(type==="heal"){ f1=520;f2=1100;dur=0.24;wave="triangle";vol=0.24; }
+  else if(type==="level"){ f1=523;f2=1568;dur=0.5;wave="square";vol=0.24; }
+  else if(type==="encounter"){ f1=130;f2=880;dur=0.28;wave="square";vol=0.22; }
+  o.frequency.setValueAtTime(f1,t);
+  o.frequency.exponentialRampToValueAtTime(Math.max(40,f2), t+dur);
+  g.gain.setValueAtTime(vol,t);
+  g.gain.exponentialRampToValueAtTime(0.0008, t+dur);
+  o.start(t); o.stop(t+dur+0.03);
 }
 
 /* ===================================================================
@@ -1165,6 +1543,9 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 
+/* ---- 起動 ---- */
+try{ audioOn = localStorage.getItem("hikari_bgm") !== "0"; }catch(e){}
+showTitle();
 requestAnimationFrame(loop);
 </script>
 </body>
