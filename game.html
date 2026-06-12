@@ -177,6 +177,7 @@ ctx.imageSmoothingEnabled = false;
 const LEGEND = {
   ".": "grass", "*": "flower", "T": "tree", "~": "water", "#": "wall",
   "^": "roof", "+": "door", "=": "path", ":": "cavefloor", "%": "cavewall",
+  ",": "floor", "b": "bridge",
 };
 // タイル属性
 const TILEDEF = {
@@ -190,6 +191,8 @@ const TILEDEF = {
   door:     { walk:true,  enc:false },
   cavefloor:{ walk:true,  enc:true  },
   cavewall: { walk:false },
+  floor:    { walk:true,  enc:false },
+  bridge:   { walk:true,  enc:false },
 };
 
 const MAPS = {
@@ -221,31 +224,31 @@ const MAPS = {
       { x:8, y:5, name:"村長", pal:{body:"#6a5acd",hair:"#dddddd"}, elder:true,
         lines:[
           "おお アレン、よく 来てくれた。","ついに この時が きてしまった…",
-          "北の どうくつに すむ 魔王ザラムが","世界を てらす『ひかりの宝玉』を 奪い去った。",
+          "魔王ザラムが 世界を てらす","『ひかりの宝玉』を 奪い去った。",
           "宝玉の 力が 失われれば、やがて 世界は","永遠の 闇に つつまれてしまう。",
           "アレンよ、お前の 中には 勇者の血が ながれておる。",
-          "北へ 行き 魔王を たおし、宝玉を 取り返すのじゃ！",
-          "…これは わずかだが 旅の そなえに。","村長から 100ゴールド と やくそう3個 を うけとった！",
+          "まずは 北の 城下町アルディアへ 行き、","アルディア王に 会うのじゃ！",
+          "…これは 旅の そなえに。","村長から 100ゴールド と やくそう3個 を うけとった！",
         ],
-        linesDone:[ "世界の 命運は おぬしに かかっておる。","村の 道具屋で やくそうを、ぶき屋で","つるぎや よろいを ととのえると よいぞ。","北の どうくつへ 急ぐのじゃ！" ],
+        linesDone:[ "村の 道具屋で やくそうを、ぶき屋で","つるぎや よろいを ととのえると よいぞ。","北の 草原を こえた 先に 城下町アルディアが ある。","アルディア王を たずねるのじゃ。" ],
         give:{ gold:100, herb:3 } },
       { x:13, y:9, name:"へいし", pal:{body:"#3a6ea5",hair:"#333333"},
         lines:[
           "戦いで 傷ついたら『どうぐ』から やくそうを 使え。",
           "MP が たまれば じゅもん『ホイミ』でも 回復できるぞ。",
           "メニューは Xキー（または メニューボタン）だ。",
-          "魔王の どうくつは 村の北。気を ひきしめて 行け！",
+          "北の 草原を こえれば 城下町アルディアだ。気を つけてな！",
         ] },
       { x:13, y:4, name:"村人", pal:{body:"#3f9e5a",hair:"#5a3a1a"},
         lines:[ "魔王が あらわれてから まものが ふえた…","フィールドを 歩けば すぐ 戦いになる。","レベルを 上げてから 北へ 向かうんだよ。" ] },
       { x:3, y:6, name:"どうぐ屋", pal:{body:"#1f9d8a",hair:"#3a2a18"}, shop:"item" },
-      { x:3, y:10, name:"ぶき屋", pal:{body:"#8a6a2a",hair:"#222222"}, shop:"weapon" },
+      { x:3, y:10, name:"ぶき屋", pal:{body:"#8a6a2a",hair:"#222222"}, shop:"weapon1" },
       { x:14, y:6, name:"宿屋の主人", pal:{body:"#b06a3a",hair:"#5a3a1a"}, inn:true, innCost:10 },
     ],
   },
 
   field: {
-    name:"はてしなき野原",
+    name:"みなみの草原",
     rows:[
       "TTTTTTTTT++TTTTTTTTT",
       "T........==........T",
@@ -266,41 +269,127 @@ const MAPS = {
     enc:true,
     encTable:["slime","slime","bat","slime","bat","skeleton"],
     warps:[
-      { x:9,  y:0,  to:"cave",    tx:7, ty:9,  dir:"up" },
-      { x:10, y:0,  to:"cave",    tx:7, ty:9,  dir:"up" },
+      { x:9,  y:0,  to:"town",    tx:9,  ty:14, dir:"up" },
+      { x:10, y:0,  to:"town",    tx:10, ty:14, dir:"up" },
       { x:9,  y:14, to:"village", tx:8, ty:11, dir:"up" },
       { x:10, y:14, to:"village", tx:9, ty:11, dir:"up" },
     ],
     npcs:[
       { x:12, y:1, name:"道しるべ", pal:{body:"#8a6a3a",hair:"#8a6a3a"}, sign:true,
-        lines:[ "『↑ 北 まおうの どうくつ』","つよい まものが でる。","レベルを 上げてから 進むべし。" ] },
+        lines:[ "『↑ 北 城下町アルディア』","この先の 草原には まものが でる。","レベルを 上げて 進もう。" ] },
+    ],
+  },
+
+  town: {
+    name:"城下町アルディア",
+    rows:[
+      "TTTTTTTTTTTTT==TTTTT",
+      "T#######,,,,,,,,,,,T",
+      "T#,,,,,#,,,,,,,,,,,T",
+      "T#,,,,,#,,,,,,,,,,,T",
+      "T#,,,,,#,,,,^^^,,,,T",
+      "T#,,,,,#,,,,^+^,,,,T",
+      "T###,###,,,,,,,,,,,T",
+      "T,,,,,,,,,,,,,,,,,,T",
+      "T,,^^^,,,,,,,,^^^,,T",
+      "T,,^+^,,,,,,,,^+^,,T",
+      "T,,,,,,,,,,,,,,,,,,T",
+      "T,,,,,,,,^^^,,,,,,,T",
+      "T,,,,,,,,^+^,,,,,,,T",
+      "T,,,,,,,,,,,,,,,,,,T",
+      "T,,,,,,,,,,,,,,,,,,T",
+      "TTTTTTTTT,,TTTTTTTTT",
+    ],
+    enc:false,
+    warps:[
+      { x:13, y:0,  to:"cave",  tx:7,  ty:11, dir:"up"   },
+      { x:14, y:0,  to:"cave",  tx:7,  ty:11, dir:"up"   },
+      { x:9,  y:15, to:"field", tx:9,  ty:1,  dir:"down" },
+      { x:10, y:15, to:"field", tx:10, ty:1,  dir:"down" },
+    ],
+    npcs:[
+      { x:3, y:3, name:"アルディア王", pal:{body:"#c89b2a",hair:"#e8e4d0"}, elder:true,
+        lines:[
+          "おお、そなたが ローライズ村の…","勇者の血を 引く者か。よくぞ まいった。",
+          "魔王ザラムは 北の『魔王城』に ひそみ、","世界の ひかりの宝玉を 奪い去った。",
+          "だが 城へ つづく『北の洞窟』は","魔の番人 ゴーレムが ふさいでおる。",
+          "ゴーレムを たおし、魔王城へ 進むのだ！",
+          "城下町で そうびを ととのえてから 行くがよい。",
+          "…これを 旅の 足しに。","アルディア王から 200ゴールド を たまわった！",
+        ],
+        linesDone:[ "北の洞窟の ゴーレムを たおし、","魔王城の ザラムを 討つのだ。","世界の 命運を 頼んだぞ、勇者よ。" ],
+        give:{ gold:200 } },
+      { x:13, y:6, name:"どうぐ屋", pal:{body:"#1f9d8a",hair:"#3a2a18"}, shop:"item" },
+      { x:4, y:10, name:"武具店の主人", pal:{body:"#8a6a2a",hair:"#222222"}, shop:"weapon2" },
+      { x:15, y:10, name:"宿屋の主人", pal:{body:"#b06a3a",hair:"#5a3a1a"}, inn:true, innCost:25 },
+      { x:8, y:7, name:"へいし", pal:{body:"#3a6ea5",hair:"#333333"},
+        lines:[ "ゴーレムは 石の体で しゅび力が 高い。","なまはんかな つるぎでは 歯が 立たぬ。","『はがねのつるぎ』は そろえておけよ。" ] },
+      { x:16, y:14, name:"旅の商人", pal:{body:"#9a5a8a",hair:"#3a2a18"},
+        lines:[ "魔王城の 中は つよい 魔物だらけ。","『まほうの聖水』を 多めに 持つと いい。","ベホイミが 使えれば なお 安心だね。" ] },
+      { x:5, y:14, name:"女の子", pal:{body:"#d86a9a",hair:"#7a4a2a"},
+        lines:[ "おにいちゃん、勇者さま なの？","魔王を やっつけて、ね！" ] },
     ],
   },
 
   cave: {
-    name:"まおうの どうくつ",
+    name:"北の洞窟",
     rows:[
-      "%%%%%%%%%%%%%%%",
+      "%%%%%%%+%%%%%%%",
       "%:::::::::::::%",
-      "%::%%:::::%%::%",
-      "%::%%:::::%%::%",
       "%:::::::::::::%",
-      "%::%%:::::%%::%",
-      "%::%%:::::%%::%",
+      "%%%%%%%:%%%%%%%",
       "%:::::::::::::%",
+      "%:::%%:::%%:::%",
+      "%:::%%:::%%:::%",
+      "%:::::::::::::%",
+      "%:::%%:::%%:::%",
+      "%:::%%:::%%:::%",
       "%:::::::::::::%",
       "%:::::::::::::%",
       "%%%%%%%+%%%%%%%",
     ],
     enc:true,
-    encTable:["bat","skeleton","wraith","skeleton","wraith","bat"],
+    encTable:["skeleton","wraith","skeleton","darkknight","wraith","skeleton"],
     warps:[
-      { x:7, y:10, to:"field", tx:9, ty:1, dir:"down" },
+      { x:7, y:0,  to:"castle", tx:8,  ty:10, dir:"up"   },
+      { x:7, y:12, to:"town",   tx:13, ty:1,  dir:"down" },
     ],
     npcs:[
-      { x:7, y:1, name:"魔王ザラム", pal:{body:"#7a1020",hair:"#220008"}, boss:true,
+      { x:7, y:3, name:"ゴーレム", pal:{body:"#9a8a6a",hair:"#6a5a3a"}, boss:true, enemy:"golem", flagKey:"golemDead",
         lines:[
-          "くっくっく…","ちっぽけな 人間が よくぞ ここまで 来たものだ。",
+          "ゴゴゴ…","ここから さきへは とおさん。",
+          "魔王さまの ねむりを さまたげる者は","この ゴーレムが くだいてくれる！",
+        ],
+        winLines:[ "ゴーレムは ガラガラと くずれおちた。","北への 道が ひらけた！" ] },
+    ],
+  },
+
+  castle: {
+    name:"まおうの城",
+    rows:[
+      "#################",
+      "#,,,,,,,,,,,,,,,#",
+      "#,,,,,,,,,,,,,,,#",
+      "#,,,##,,,,,##,,,#",
+      "#,,,##,,,,,##,,,#",
+      "#,,,,,,,,,,,,,,,#",
+      "#,,,##,,,,,##,,,#",
+      "#,,,##,,,,,##,,,#",
+      "#,,,,,,,,,,,,,,,#",
+      "#,,,,,,,,,,,,,,,#",
+      "########,########",
+      "########+########",
+    ],
+    enc:true,
+    encTable:["darkknight","wizard","wraith","darkknight","wizard","darkknight"],
+    warps:[
+      { x:8, y:11, to:"cave", tx:7, ty:1, dir:"down" },
+    ],
+    npcs:[
+      { x:8, y:1, name:"魔王ザラム", pal:{body:"#7a1020",hair:"#220008"}, boss:true, enemy:"zaram", final:true, flagKey:"bossDead",
+        lines:[
+          "くっくっく…","よくぞ 魔王城まで たどりついた。",
+          "だが ここが きさまの 墓場よ。",
           "ひかりの宝玉が ほしくば―","この 魔王ザラムを たおしてみせよ！",
         ] },
     ],
@@ -309,24 +398,29 @@ const MAPS = {
 
 /* ---------------- 敵データ ---------------- */
 const ENEMIES = {
-  slime:    { name:"スライム",   hp:9,   atk:7,  def:2, exp:4,  gold:3,  draw:"slime",   col:"#3fd0e0" },
-  bat:      { name:"おおコウモリ", hp:8,   atk:9,  def:1, exp:5,  gold:4,  draw:"bat",     col:"#8a5cd8" },
-  skeleton: { name:"がいこつ戦士", hp:22,  atk:13, def:5, exp:15, gold:18, draw:"skel",   col:"#e8e4d0" },
-  wraith:   { name:"さまよう魂",  hp:18,  atk:16, def:3, exp:18, gold:22, draw:"ghost",   col:"#9ff0d0" },
-  zaram:    { name:"魔王ザラム",  hp:130, atk:24, def:9, exp:0,  gold:0,  draw:"boss",    col:"#c8203a", boss:true },
+  slime:     { name:"スライム",     hp:9,   atk:7,  def:2,  exp:4,  gold:3,  draw:"slime", col:"#3fd0e0" },
+  bat:       { name:"おおコウモリ", hp:8,   atk:9,  def:1,  exp:5,  gold:4,  draw:"bat",   col:"#8a5cd8" },
+  skeleton:  { name:"がいこつ戦士", hp:22,  atk:13, def:5,  exp:15, gold:18, draw:"skel",  col:"#e8e4d0" },
+  wraith:    { name:"さまよう魂",   hp:18,  atk:16, def:3,  exp:18, gold:22, draw:"ghost", col:"#9ff0d0" },
+  darkknight:{ name:"やみの騎士",   hp:34,  atk:21, def:9,  exp:30, gold:42, draw:"knight",col:"#5a5f7a" },
+  wizard:    { name:"まどうし",     hp:24,  atk:24, def:4,  exp:34, gold:52, draw:"mage",  col:"#7a3aa0" },
+  golem:     { name:"ゴーレム",     hp:78,  atk:20, def:15, exp:95, gold:240, draw:"golem",col:"#9a8a6a", boss:true },
+  zaram:     { name:"魔王ザラム",   hp:178, atk:27, def:12, exp:0,  gold:0,  draw:"boss",  col:"#c8203a", boss:true, final:true },
 };
 
 /* ---------------- じゅもん ---------------- */
 const SPELLS = {
-  homi:    { name:"ホイミ",    cost:3,  type:"heal", lo:25, hi:35 },
-  mera:    { name:"メラ",      cost:4,  type:"dmg",  lo:12, hi:18 },
-  behomi:  { name:"ベホイミ",  cost:7,  type:"heal", lo:55, hi:85 },
-  merami:  { name:"メラミ",    cost:10, type:"dmg",  lo:30, hi:46 },
+  homi:     { name:"ホイミ",     cost:3,  type:"heal", lo:25,  hi:35 },
+  mera:     { name:"メラ",       cost:4,  type:"dmg",  lo:12,  hi:18 },
+  behomi:   { name:"ベホイミ",   cost:7,  type:"heal", lo:55,  hi:85 },
+  merami:   { name:"メラミ",     cost:10, type:"dmg",  lo:30,  hi:46 },
+  behoma:   { name:"ベホマ",     cost:14, type:"heal", lo:999, hi:999 },
+  merazoma: { name:"メラゾーマ", cost:18, type:"dmg",  lo:70,  hi:95 },
 };
 // レベル習得表
-const LEARN = { 2:["mera"], 4:["behomi"], 6:["merami"] };
+const LEARN = { 2:["mera"], 4:["behomi"], 6:["merami"], 8:["behoma"], 10:["merazoma"] };
 // 次のレベルに必要な累計経験値
-const EXP_TABLE = [0, 0, 7, 18, 34, 56, 88, 130, 185, 255, 340];
+const EXP_TABLE = [0, 0, 7, 18, 34, 56, 88, 130, 185, 255, 340, 460, 600, 770];
 
 /* ---------------- 装備品 ---------------- */
 const EQUIP = {
@@ -356,14 +450,20 @@ const SHOPS = {
       { kind:"item",  key:"ether", price:30 },
     ],
   },
-  weapon: {
+  weapon1: {
     title:"ぶき・ぼうぐ屋",
-    greet:["へい、らっしゃい！","いい ぶきと よろいが そろってるぜ。"],
+    greet:["へい、らっしゃい！","村の そうびなら こんなところさ。"],
     goods:[
       { kind:"weapon", key:"copper" },
+      { kind:"armor",  key:"leather" },
+    ],
+  },
+  weapon2: {
+    title:"アルディア武具店",
+    greet:["王都の 武具店へ ようこそ。","上等な ぶきと よろいが そろっておりますよ。"],
+    goods:[
       { kind:"weapon", key:"iron" },
       { kind:"weapon", key:"flame" },
-      { kind:"armor",  key:"leather" },
       { kind:"armor",  key:"chain" },
       { kind:"armor",  key:"plate" },
     ],
@@ -586,15 +686,16 @@ function talkTo(n){
       if(n.give.herb) P.items.herb += n.give.herb;
       P.flags["gift_"+n.name]=true; updateHUD();
     }
-    if(n.boss){ startBattle("zaram", n); }
+    if(n.boss){ startBattle(n.enemy||"zaram", n); }
   };
   showDialogue(lines, n.name, onEnd);
 }
 
-/* セーブ／ロード時に、フラグから世界の状態（討伐済みの魔王など）を復元 */
+/* セーブ／ロード時に、フラグから世界の状態（討伐済みのボスなど）を復元 */
 function applyWorldState(){
-  for(const m of Object.values(MAPS)) for(const n of (m.npcs||[])) n.gone=false;
-  if(P.flags.bossDead){ const z=(MAPS.cave.npcs||[]).find(n=>n.boss); if(z) z.gone=true; }
+  for(const m of Object.values(MAPS)) for(const n of (m.npcs||[])){
+    n.gone = (n.boss && n.flagKey) ? !!P.flags[n.flagKey] : false;
+  }
 }
 function showDialogue(lines, speaker, onEnd){
   game.state="dialogue";
@@ -804,7 +905,7 @@ function startBattle(enemyKey, npc){
   const base = ENEMIES[enemyKey];
   const e = { key:enemyKey, name:base.name, hp:base.hp, maxhp:base.hp,
               atk:base.atk, def:base.def, exp:base.exp, gold:base.gold,
-              draw:base.draw, col:base.col, boss:!!base.boss };
+              draw:base.draw, col:base.col, boss:!!base.boss, final:!!base.final };
   game.bt = { enemy:e, npc:npc||null, menu:"root", sel:0, log:[], busy:false,
               shakeT:0, flashT:0, enemyFlash:0, intro:1.2 };
   game.state="battle";
@@ -955,12 +1056,15 @@ function afterEnemy(){
 function victory(){
   const bt=game.bt, e=bt.enemy;
   bt.busy=true; bt.enemyFlash=0; hideCmd();
-  if(e.boss){ setTimeout(()=>bossDefeated(), 700); return; }
+  // ボスNPCは消滅させ、討伐フラグを立てる（道が開く・セーブで復元）
+  if(bt.npc && bt.npc.boss){ bt.npc.gone=true; if(bt.npc.flagKey) P.flags[bt.npc.flagKey]=true; }
+  if(e.final){ setTimeout(()=>bossDefeated(), 700); return; }
   // 経験値・ゴールド
   const msgs=[`${e.name}を たおした！`, `${e.exp} の経験値を 得た！\n${e.gold}ゴールドを 手に入れた！`];
   P.exp+=e.exp; P.gold+=e.gold;
   const lvMsgs=checkLevelUp();
-  showSequence([...msgs, ...lvMsgs], ()=>{ updateHUD(); endBattle(); });
+  const extra = (bt.npc && bt.npc.winLines) ? bt.npc.winLines : [];
+  showSequence([...msgs, ...lvMsgs, ...extra], ()=>{ updateHUD(); endBattle(); });
 }
 function checkLevelUp(){
   const out=[];
@@ -1097,7 +1201,7 @@ function drawWorld(){
     if(n.gone) continue;
     const sx=Math.round(n.x*TILE-camX+offX), sy=Math.round(n.y*TILE-camY+offY);
     if(sx<-TILE||sx>canvas.width||sy<-TILE||sy>canvas.height) continue;
-    drawCharacter(sx, sy, n.pal, n.dir||"down", 0, n.boss);
+    drawCharacter(sx, sy, n.pal, n.dir||"down", 0, n.boss ? (n.enemy||"demon") : null);
   }
   // プレイヤー
   const psx=Math.round(P.px-camX+offX), psy=Math.round(P.py-camY+offY);
@@ -1183,14 +1287,37 @@ function drawTile(t, sx, sy, gx, gy){
       ctx.fillStyle="#1a1822"; ctx.fillRect(sx+10,sy+12,6,6);
       break;
     }
+    case "floor": { // 石畳（町・城）
+      ctx.fillStyle="#b9b2a4"; ctx.fillRect(sx,sy,TILE,TILE);
+      ctx.fillStyle="#a79f90"; ctx.fillRect(sx,sy+15,TILE,2); ctx.fillRect(sx+15,sy,2,TILE);
+      ctx.fillStyle="#c7c0b3"; if(r&2)ctx.fillRect(sx+5,sy+5,9,9); if(r&8)ctx.fillRect(sx+19,sy+19,8,8);
+      break;
+    }
+    case "bridge": {
+      ctx.fillStyle="#2f6fd6"; ctx.fillRect(sx,sy,TILE,TILE);
+      ctx.fillStyle="#7a4a22"; ctx.fillRect(sx,sy+4,TILE,8); ctx.fillRect(sx,sy+20,TILE,8);
+      ctx.fillStyle="#5a3416"; ctx.fillRect(sx,sy+4,TILE,2); ctx.fillRect(sx,sy+20,TILE,2);
+      break;
+    }
     default: ctx.fillStyle="#222"; ctx.fillRect(sx,sy,TILE,TILE);
   }
 }
 
 /* キャラクター（16x?を32マスに配置） */
-function drawCharacter(sx, sy, pal, dir, step, isBoss, isHero){
+function drawCharacter(sx, sy, pal, dir, step, bossType, isHero){
   const x=sx, y=sy;
-  if(isBoss){
+  if(bossType==="golem"){
+    // 石のゴーレム（フィールド表示用）
+    ctx.fillStyle="rgba(0,0,0,.28)"; ctx.beginPath(); ctx.ellipse(x+16,y+30,11,3,0,0,7); ctx.fill();
+    ctx.fillStyle="#7a6f54"; ctx.fillRect(x+5,y+9,22,21);          // 胴
+    ctx.fillStyle=pal.body||"#9a8a6a"; ctx.fillRect(x+7,y+11,18,16);
+    ctx.fillStyle="#6a5f48"; ctx.fillRect(x+3,y+13,4,10); ctx.fillRect(x+25,y+13,4,10); // 腕
+    ctx.fillStyle="#8a7c5e"; ctx.fillRect(x+10,y+4,12,8);          // 頭
+    ctx.fillStyle="#ffd24d"; ctx.fillRect(x+12,y+6,3,3); ctx.fillRect(x+17,y+6,3,3); // 目
+    ctx.fillStyle="#5a4f3a"; ctx.fillRect(x+9,y+18,14,2);          // ひび
+    return;
+  }
+  if(bossType){
     // 大きめの魔王スプライト（フィールド表示用）
     ctx.fillStyle="#2a0a12"; ctx.fillRect(x+6,y+8,20,22);
     ctx.fillStyle=pal.body; ctx.fillRect(x+8,y+10,16,18);
@@ -1324,6 +1451,35 @@ function drawEnemySprite(kind, col, s, dead){
       ctx.globalAlpha=1; ctx.fillStyle="#0a2a22"; ctx.beginPath(); ctx.arc(-5,-7,3,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(5,-7,3,0,7); ctx.fill();
       break;
     }
+    case "golem": {
+      ctx.fillStyle="#6a5f48"; ctx.fillRect(-22,-14,44,40);        // 胴体
+      ctx.fillStyle=col; ctx.fillRect(-18,-10,36,32);
+      ctx.fillStyle="#5a4f3a"; ctx.fillRect(-28,-8,8,24); ctx.fillRect(20,-8,8,24); // 腕
+      ctx.fillStyle=col; ctx.fillRect(-27,-7,6,22); ctx.fillRect(21,-7,6,22);
+      ctx.fillStyle="#7c6f54"; ctx.fillRect(-14,-30,28,18);        // 頭
+      ctx.fillStyle="#ffd24d"; ctx.fillRect(-9,-24,6,5); ctx.fillRect(3,-24,6,5); // 目
+      ctx.fillStyle="#4a4030"; ctx.fillRect(-16,2,32,3); ctx.fillRect(-6,-10,3,30); // ひび
+      break;
+    }
+    case "knight": {
+      ctx.fillStyle="#2a2e40"; ctx.beginPath(); ctx.moveTo(-18,26); ctx.lineTo(-10,-12); ctx.lineTo(10,-12); ctx.lineTo(18,26); ctx.closePath(); ctx.fill(); // マント
+      ctx.fillStyle=col; ctx.fillRect(-12,-12,24,30);             // よろい胴
+      ctx.fillStyle="#7a8098"; ctx.fillRect(-12,0,24,4);
+      ctx.fillStyle="#3a3f55"; ctx.fillRect(-13,-26,26,16);       // かぶと
+      ctx.fillStyle="#11131c"; ctx.fillRect(-10,-20,20,5);        // 面の隙間
+      ctx.fillStyle="#ff5a5a"; ctx.fillRect(-6,-19,3,3); ctx.fillRect(3,-19,3,3); // 赤い目
+      ctx.fillStyle="#cfd6e6"; ctx.save(); ctx.translate(16,2); ctx.rotate(-0.25); ctx.fillRect(-2,-30,4,40); ctx.fillStyle="#caa44a"; ctx.fillRect(-5,-2,10,4); ctx.restore(); // 剣
+      break;
+    }
+    case "mage": {
+      ctx.fillStyle=col; ctx.beginPath(); ctx.moveTo(-16,26); ctx.lineTo(0,-6); ctx.lineTo(16,26); ctx.closePath(); ctx.fill(); // ローブ
+      ctx.fillStyle="#4a2068"; ctx.beginPath(); ctx.moveTo(0,-40); ctx.lineTo(-12,-8); ctx.lineTo(12,-8); ctx.closePath(); ctx.fill(); // とんがり帽子
+      ctx.fillStyle="#f2c79a"; ctx.beginPath(); ctx.arc(0,-6,7,0,7); ctx.fill(); // 顔
+      ctx.fillStyle="#111"; ctx.fillRect(-4,-7,2,3); ctx.fillRect(2,-7,2,3);
+      ctx.fillStyle="#6a4a2a"; ctx.fillRect(15,-18,3,40);          // 杖
+      ctx.fillStyle="#ff5af0"; ctx.beginPath(); ctx.arc(16,-20,5,0,7); ctx.fill(); // 杖の宝玉
+      break;
+    }
     case "boss": {
       // マント
       ctx.fillStyle="#1a0610"; ctx.beginPath(); ctx.moveTo(-26,24); ctx.lineTo(-16,-18); ctx.lineTo(16,-18); ctx.lineTo(26,24); ctx.closePath(); ctx.fill();
@@ -1355,9 +1511,11 @@ function showEnding(){
     <div class="sub">― ENDING ―</div>
     <h1>世界に <span class="y">ひかり</span> が<br>もどった</h1>
     <p class="story">
-      アレンが ひかりの宝玉を 王国に かえすと、<br>
+      アレンが ひかりの宝玉を アルディア王に かえすと、<br>
       空をおおっていた 闇は はれ、あたたかな 陽の光が<br>
       ふたたび 大地を てらしはじめた。<br><br>
+      ローライズ村から 城下町、北の洞窟、そして 魔王城へ。<br>
+      長い 旅路の はてに、世界は 平和を 取り戻した。<br><br>
       人々は 勇者アレンの 名を いつまでも 語りつたえたという。<br><br>
       <b>― おわり ―</b>
     </p>
@@ -1438,10 +1596,14 @@ const TUNES={
                     bass:[["D2",2],["D2",2],["D2",2],["A2",2],["Bb2",2],["Bb2",2],["A2",2],["A2",2],
                           ["D2",2],["D2",2],["G2",2],["G2",2],["A2",2],["A2",2],["A2",2],["A2",2]] },
 };
+TUNES.castle={ tempo:104, lead:[["D5",2],["A4",2],["D5",2],["F5",2],["E5",2],["C5",2],["D5",4],
+                                ["A4",2],["F4",2],["A4",2],["C5",2],["Bb4",2],["G4",2],["A4",4]],
+                          bass:[["D2",4],["D2",4],["Bb2",4],["A2",4],["D2",4],["F2",4],["E2",4],["A2",4]] };
 TUNES.title=TUNES.town;
 TUNES.ending=TUNES.town;
 
 function bgmForState(){
+  if(P.map==="castle") return "castle";
   if(P.map==="cave") return "cave";
   if(P.map==="field") return "field";
   return "town";
