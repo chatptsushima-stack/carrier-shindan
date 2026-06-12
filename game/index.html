@@ -58,6 +58,7 @@ canvas{display:block}
 #hud{position:fixed;inset:0;z-index:10;pointer-events:none;display:none}
 #hud.show{display:block}
 
+#hearts,#objective{transition:opacity .4s}
 #hearts{position:absolute;top:22px;left:26px;display:flex;gap:5px;filter:drop-shadow(0 1px 3px rgba(0,0,0,.7))}
 .heart{width:24px;height:24px}
 
@@ -142,7 +143,9 @@ canvas{display:block}
 #controls{
   position:absolute;bottom:18px;left:24px;color:rgba(233,228,216,.55);
   font-size:11px;letter-spacing:.12em;line-height:1.9;text-shadow:0 1px 3px #000;
+  transition:opacity .4s;
 }
+#hud.incutscene #controls,#hud.incutscene #objective,#hud.incutscene #hearts,#hud.incutscene #stamina{opacity:0}
 #controls b{color:rgba(232,200,122,.8);font-weight:600}
 
 #loading{position:fixed;inset:0;z-index:60;background:#000;display:flex;align-items:center;justify-content:center;

@@ -1930,7 +1930,24 @@ function updatePlayer(dt) {
 // ------------------------------------------------------------
 // カメラ更新
 // ------------------------------------------------------------
+let titleCamT = 0;
 function updateCamera(dt) {
+  // タイトル画面: 主人公の周りをゆっくり旋回
+  if (!game.started) {
+    titleCamT += dt;
+    const a = titleCamT * 0.06 + Math.PI * 0.8;
+    _v1.set(player.pos.x, player.pos.y + 1.4, player.pos.z);
+    _v2.set(
+      _v1.x + Math.sin(a) * 8.5,
+      _v1.y + 1.6,
+      _v1.z + Math.cos(a) * 8.5
+    );
+    const gh0 = terrainHeight(_v2.x, _v2.z) + 0.6;
+    if (_v2.y < gh0) _v2.y = gh0;
+    camera.position.lerp(_v2, 1 - Math.pow(0.001, dt));
+    camera.lookAt(_v1);
+    return;
+  }
   // 会話中はシネマカメラ(二人を横から収める)
   if (dialogState.active) {
     _v1.addVectors(npc.position, player.pos).multiplyScalar(0.5);
@@ -2140,6 +2157,7 @@ function updateFireflies(time) {
 // インタラクションプロンプト更新
 // ------------------------------------------------------------
 function updatePrompt() {
+  ui.hud.classList.toggle('incutscene', dialogState.active || narrationState.active);
   if (dialogState.active || narrationState.active || player.dead || !game.started) {
     ui.prompt.classList.remove('show');
     return;
