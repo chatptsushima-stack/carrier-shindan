@@ -649,7 +649,7 @@ const LOC = {
   shrineA: new THREE.Vector3(-150, 0, -90),   // 森の祠
   shrineB: new THREE.Vector3(170, 0, -160),   // 湖畔の祠
   shrineC: new THREE.Vector3(-60, 0, 210),    // 丘の祠
-  altar: new THREE.Vector3(20, 0, -330),      // 北の祭壇(ボス)
+  altar: new THREE.Vector3(-200, 0, -320),    // 北西の祭壇(ボス)
 };
 for (const k in LOC) LOC[k].y = terrainHeight(LOC[k].x, LOC[k].z);
 
@@ -1426,7 +1426,7 @@ const game = {
   shardCount: 0,
   bossActive: false,
   bossDefeated: false,
-  time: DAY_LENGTH * 0.72,  // 夕方近くからスタート(黄金の光)
+  time: DAY_LENGTH * 0.66,  // 夕方前からスタート(黄金の光が続く)
   playTime: 0,
 };
 
@@ -1971,7 +1971,9 @@ function updateCamera(dt) {
 // ------------------------------------------------------------
 const sunDir = V3();
 function updateDayNight(dt) {
-  game.time = (game.time + dt) % DAY_LENGTH;
+  // 夜は時の流れを速める(暗い時間を短縮)
+  const nightNow = skyUniforms.uNight.value;
+  game.time = (game.time + dt * (nightNow > 0.5 ? 2.4 : 1)) % DAY_LENGTH;
   const dayT = game.time / DAY_LENGTH;          // 0..1(0=深夜)
   const ang = (dayT - 0.25) * Math.PI * 2;       // 0.25で日の出
   sunDir.set(Math.cos(ang) * 0.6, Math.sin(ang), Math.cos(ang) * 0.45 + 0.3).normalize();
@@ -1997,7 +1999,7 @@ function updateDayNight(dt) {
 
   // 月光(夜の薄明かり)
   if (nightF > 0.5) {
-    sun.intensity = 0.18;
+    sun.intensity = 0.28;
     sun.color.setHex(0x6a82b8);
     sun.position.copy(player.pos).addScaledVector(sunDir, -180);
   }
@@ -2015,7 +2017,7 @@ function updateDayNight(dt) {
     lerp(0.07, 0.5, dayF),
     lerp(0.12, 0.48, dayF)
   );
-  renderer.toneMappingExposure = lerp(0.9, 1.08, dayF);
+  renderer.toneMappingExposure = lerp(0.9, 1.08, dayF) + duskF * 0.12;
 }
 const _c1 = new THREE.Color(), _c2 = new THREE.Color(), _c3 = new THREE.Color();
 
@@ -2052,6 +2054,48 @@ function updateCompass() {
   const rel = worldAng - cam.yaw;
   obDirArrow.style.transform = `rotate(${(-rel * 180 / Math.PI - 90).toFixed(1)}deg)`;
   obDirM.textContent = `${Math.round(dist)} m`;
+}
+
+// ------------------------------------------------------------
+// 鳥の群れ(昼の空を舞う)
+// ------------------------------------------------------------
+const birds = (() => {
+  const flock = [];
+  const mat = new THREE.MeshBasicMaterial({ color: 0x2a2c33, side: THREE.DoubleSide });
+  for (let i = 0; i < 6; i++) {
+    const b = new THREE.Group();
+    const wingGeo = new THREE.PlaneGeometry(0.9, 0.32);
+    wingGeo.translate(0.45, 0, 0);
+    const wL = new THREE.Mesh(wingGeo, mat);
+    const wR = new THREE.Mesh(wingGeo, mat);
+    wR.rotation.y = Math.PI;
+    b.add(wL, wR);
+    scene.add(b);
+    flock.push({
+      g: b, wL, wR,
+      cx: rand(200, -200), cz: rand(200, -200),
+      r: rand(70, 25), h: rand(75, 40),
+      sp: rand(0.14, 0.06) * (Math.random() < 0.5 ? 1 : -1),
+      ph: rand(10), flap: rand(8, 4),
+    });
+  }
+  return flock;
+})();
+function updateBirds(time) {
+  const day = skyUniforms.uNight.value < 0.4;
+  for (const b of birds) {
+    b.g.visible = day;
+    if (!day) continue;
+    const a = time * b.sp + b.ph;
+    const x = b.cx + Math.cos(a) * b.r;
+    const z = b.cz + Math.sin(a) * b.r;
+    const y = Math.max(terrainHeight(x, z) + 22, b.h) + Math.sin(time * 0.7 + b.ph) * 3;
+    b.g.position.set(x, y, z);
+    b.g.rotation.y = -a - (b.sp > 0 ? 0 : Math.PI);
+    const flap = Math.sin(time * b.flap + b.ph) * 0.65;
+    b.wL.rotation.x = flap;
+    b.wR.rotation.x = -flap;
+  }
 }
 
 // ------------------------------------------------------------
@@ -2259,6 +2303,7 @@ function animate() {
   updatePrompt();
   updateCompass();
   updateFireflies(elapsed);
+  updateBirds(elapsed);
   checkBossTrigger();
   if (game.started) {
     checkQuality(dt);
@@ -2292,4 +2337,4 @@ function animate() {
 animate();
 
 // 開発用フック(自動テスト・デバッグ)
-window.__debug = { game, player, LOC, enemies, cam, collectShard, updateQuest };
+window.__debug = { game, player, LOC, enemies, cam, collectShard, updateQuest, damageEnemy };
