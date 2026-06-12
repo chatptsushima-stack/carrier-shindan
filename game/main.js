@@ -482,12 +482,23 @@ const colliders = []; // {x, z, r}
 // ------------------------------------------------------------
 // 木 / 岩 / 花(インスタンシング)
 // ------------------------------------------------------------
+const treeWind = { value: 0 };
 function scatterTrees() {
   const trunkGeo = new THREE.CylinderGeometry(0.28, 0.5, 4.4, 6);
   trunkGeo.translate(0, 2.2, 0);
   const folGeo = new THREE.IcosahedronGeometry(2.1, 1);
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4a33, roughness: 1 });
   const folMat = new THREE.MeshStandardMaterial({ roughness: 1, vertexColors: false });
+  // 葉の風揺れ(インスタンス位置を位相にして個体差を出す)
+  folMat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = treeWind;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        float wph = dot(instanceMatrix[3].xz, vec2(0.13, 0.17));
+        transformed += vec3(sin(uTime*1.5 + wph), sin(uTime*0.9 + wph)*0.4, cos(uTime*1.2 + wph))
+                       * 0.12 * (position.y*0.2 + 0.6);`);
+  };
 
   const positions = [];
   let attempts = 0;
@@ -766,6 +777,7 @@ function buildHero() {
   return { group: g, armL, armR, legL, legR, head, sword };
 }
 const hero = buildHero();
+hero.group.rotation.order = 'YXZ';   // ロール回転(X)をヨー(Y)の後に適用
 hero.group.position.copy(SPAWN);
 hero.group.position.y = terrainHeight(SPAWN.x, SPAWN.z);
 scene.add(hero.group);
@@ -1296,11 +1308,13 @@ function showDialogLine() {
   ui.dialogName.textContent = l.name ? `― ${l.name} ―` : '';
   ui.dialogBody.textContent = l.text;
 }
+let interactBlockUntil = 0;
 function advanceDialog() {
   dialogState.idx++;
   if (dialogState.idx >= dialogState.lines.length) {
     dialogState.active = false;
     ui.dialog.classList.remove('show');
+    interactBlockUntil = performance.now() + 500; // 連打での再会話を防ぐ
     if (dialogState.onEnd) dialogState.onEnd();
   } else showDialogLine();
 }
@@ -1355,6 +1369,7 @@ const player = {
   stamina: 100, staminaRegenDelay: 0, exhausted: false,
   onGround: true,
   attackT: 0, attackCombo: 0,
+  rollT: 0, rollDir: new THREE.Vector3(),
   invulnT: 0,
   speedSmooth: 0,
   animPhase: 0,
@@ -1467,6 +1482,7 @@ function updateQuest(q) {
       setObjective('世界に朝が戻った');
       break;
   }
+  saveGame();
 }
 
 // 記憶の欠片の設置
@@ -1555,11 +1571,42 @@ function onBossDefeated() {
 // 戦闘
 // ------------------------------------------------------------
 let shake = 0;
+let hitStop = 0;
+function tryRoll() {
+  if (player.rollT > 0 || player.attackT > 0 || player.dead || !player.onGround) return;
+  if (dialogState.active || narrationState.active || !game.started) return;
+  if (player.exhausted || player.stamina < 15) return;
+  player.stamina -= 15;
+  player.staminaRegenDelay = 0.8;
+  player.rollT = 0.42;
+  player.invulnT = Math.max(player.invulnT, 0.5);
+  // 入力方向、なければ前方
+  let ix = 0, iz = 0;
+  if (keys['KeyW']) iz -= 1;
+  if (keys['KeyS']) iz += 1;
+  if (keys['KeyA']) ix -= 1;
+  if (keys['KeyD']) ix += 1;
+  if (ix || iz) {
+    const len = Math.hypot(ix, iz);
+    const sy = Math.sin(cam.yaw), cy = Math.cos(cam.yaw);
+    player.rollDir.set((ix * cy + iz * sy) / len, 0, (-ix * sy + iz * cy) / len);
+  } else {
+    player.rollDir.set(Math.sin(player.yaw), 0, Math.cos(player.yaw));
+  }
+  player.yaw = Math.atan2(player.rollDir.x, player.rollDir.z);
+  audio.noiseBurst(0.12, 600, 0.07, 0.5);
+}
 function tryAttack() {
   if (player.attackT > 0 || player.dead || dialogState.active || narrationState.active) return;
+  if (player.rollT > 0) return;
   player.attackT = 0.42;
   player.attackCombo = (player.attackCombo + 1) % 2;
   audio.sword();
+  // ダッシュ中は踏み込み斬り
+  if ((keys['ShiftLeft'] || keys['ShiftRight']) && !player.exhausted) {
+    player.vel.x += Math.sin(player.yaw) * 7;
+    player.vel.z += Math.cos(player.yaw) * 7;
+  }
   // ヒット判定
   for (const e of enemies) {
     if (e.dead) continue;
@@ -1575,6 +1622,7 @@ function tryAttack() {
 function damageEnemy(e, amount) {
   e.hp -= amount;
   e.hurtT = 0.25;
+  hitStop = Math.max(hitStop, 0.06);
   audio.hit();
   shake = Math.max(shake, 0.15);
   _v1.copy(e.pos).y += 1;
@@ -1584,10 +1632,20 @@ function damageEnemy(e, amount) {
   e.vel.add(_v2);
   if (e.type === 'boss') {
     ui.bossFill.style.width = `${Math.max(0, e.hp / e.maxHp) * 100}%`;
+    if (!e.phase2 && e.hp <= e.maxHp * 0.5 && e.hp > 0) {
+      e.phase2 = true;
+      e.speed *= 1.45;
+      audio.roar();
+      shake = 0.7;
+      showNotice('影ノ獣の眼が、紅く燃え上がる', 2.5);
+      spawnParticles(_v1.copy(e.pos).add(new THREE.Vector3(0, 2.5, 0)), 50, 0xff3322, 9, 1.2, 4);
+      for (const sgn of [-1, 1]) spawnEnemy('shade', e.pos.x + 6 * sgn, e.pos.z + 4);
+    }
   }
   if (e.hp <= 0 && !e.dead) {
     e.dead = true;
     e.deathT = 0.8;
+    hitStop = Math.max(hitStop, 0.11);
     audio.kill();
     _v1.copy(e.pos).y += 1;
     spawnParticles(_v1, 30, e.type === 'slime' ? 0x9ad84a : 0xb86aff, 6, 1, 3);
@@ -1606,12 +1664,16 @@ addEventListener('mousedown', e => {
     return;
   }
   if (e.button === 0) tryAttack();
+  if (e.button === 2) tryRoll();
 });
+addEventListener('contextmenu', e => e.preventDefault());
+addEventListener('keydown', e => { if (e.code === 'KeyC') tryRoll(); });
 
 addEventListener('keydown', e => {
   if (e.code === 'KeyE' && game.started && !player.dead) {
     if (dialogState.active) { advanceDialog(); return; }
     if (narrationState.active) { if (narrationState.ready) nextNarration(); return; }
+    if (performance.now() < interactBlockUntil) return;
     for (const it of interactables) {
       if (!it.enabled()) continue;
       if (player.pos.distanceTo(it.pos) < it.r) { it.onUse(); break; }
@@ -1766,6 +1828,16 @@ function updatePlayer(dt) {
   // 攻撃中は減速
   if (player.attackT > 0) { mx *= 0.25; mz *= 0.25; }
 
+  // 回避ロール
+  if (player.rollT > 0) {
+    player.rollT -= dt;
+    const rollSpeed = 13 * smoothstep(0, 0.12, player.rollT);
+    mx = player.rollDir.x * rollSpeed;
+    mz = player.rollDir.z * rollSpeed;
+    hero.group.rotation.x = (1 - player.rollT / 0.42) * Math.PI * 2;
+    if (player.rollT <= 0) hero.group.rotation.x = 0;
+  } else hero.group.rotation.x = 0;
+
   // 重力 / ジャンプ
   player.vel.y -= 30 * dt;
   if (keys['Space'] && player.onGround && !inCutscene) {
@@ -1859,6 +1931,21 @@ function updatePlayer(dt) {
 // カメラ更新
 // ------------------------------------------------------------
 function updateCamera(dt) {
+  // 会話中はシネマカメラ(二人を横から収める)
+  if (dialogState.active) {
+    _v1.addVectors(npc.position, player.pos).multiplyScalar(0.5);
+    _v1.y += 1.5;
+    _v2.subVectors(npc.position, player.pos);
+    const len = Math.max(_v2.length(), 2);
+    _v2.normalize();
+    _v3.set(-_v2.z, 0, _v2.x).multiplyScalar(len * 1.4 + 2.5).add(_v1);
+    _v3.y += 0.7;
+    const gh = terrainHeight(_v3.x, _v3.z) + 0.6;
+    if (_v3.y < gh) _v3.y = gh;
+    camera.position.lerp(_v3, 1 - Math.pow(0.001, dt));
+    camera.lookAt(_v1);
+    return;
+  }
   _v1.set(player.pos.x, player.pos.y + 1.55, player.pos.z);
   const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
   _v2.set(
@@ -2046,9 +2133,59 @@ function updatePickups(dt, time) {
 }
 
 // ------------------------------------------------------------
+// セーブ / ロード
+// ------------------------------------------------------------
+const SAVE_KEY = 'kaze_no_zankyo_save';
+function saveGame() {
+  if (!game.started) return;
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      quest: game.quest === 'boss' ? 'altar' : game.quest,
+      shards: game.shards,
+      bossDefeated: game.bossDefeated,
+      hp: player.hp,
+      pos: [player.pos.x, player.pos.z],
+      time: game.time,
+    }));
+  } catch (e) { /* プライベートモード等では保存しない */ }
+}
+function loadSaveData() {
+  try { return JSON.parse(localStorage.getItem(SAVE_KEY)); } catch (e) { return null; }
+}
+let saveTimer = 0;
+
+// ------------------------------------------------------------
 // ゲーム開始フロー
 // ------------------------------------------------------------
 ui.loading.classList.add('hidden');
+
+const contBtn = document.getElementById('contBtn');
+{
+  const sv = loadSaveData();
+  if (sv && sv.quest && sv.quest !== 'intro') contBtn.style.display = '';
+}
+contBtn.addEventListener('click', () => {
+  const sv = loadSaveData();
+  if (!sv) return;
+  audio.init();
+  ui.title.classList.add('hidden');
+  game.shards = sv.shards || { A: false, B: false, C: false };
+  game.shardCount = Object.values(game.shards).filter(Boolean).length;
+  game.bossDefeated = !!sv.bossDefeated;
+  game.time = sv.time ?? game.time;
+  for (const k of ['A', 'B', 'C']) if (game.shards[k]) scene.remove(shards[k]);
+  player.hp = clamp(sv.hp ?? 10, 1, player.maxHp);
+  if (Array.isArray(sv.pos)) {
+    player.pos.set(sv.pos[0], 0, sv.pos[1]);
+    player.pos.y = terrainHeight(sv.pos[0], sv.pos[1]);
+  }
+  game.started = true;
+  ui.hud.classList.add('show');
+  renderHearts();
+  updateQuest(game.bossDefeated ? 'ending' : sv.quest);
+  showNotice('旅の続きへ', 2.5);
+  renderer.domElement.requestPointerLock?.();
+});
 
 document.getElementById('startBtn').addEventListener('click', () => {
   audio.init();
@@ -2101,11 +2238,13 @@ let elapsed = 0;
 
 function animate() {
   requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 0.05);
+  let dt = Math.min(clock.getDelta(), 0.05);
+  if (hitStop > 0) { hitStop -= dt; dt *= 0.12; }   // ヒットストップ(手応え)
   elapsed += dt;
   if (game.started) game.playTime += dt;
 
   grassUniforms.uTime.value = elapsed;
+  treeWind.value = elapsed;
   grassUniforms.uCenter.value.set(player.pos.x, player.pos.z);
   waterUniforms.uTime.value = elapsed;
   skyUniforms.uTime.value = elapsed;
@@ -2121,7 +2260,11 @@ function animate() {
   updateCompass();
   updateFireflies(elapsed);
   checkBossTrigger();
-  if (game.started) checkQuality(dt);
+  if (game.started) {
+    checkQuality(dt);
+    saveTimer += dt;
+    if (saveTimer > 5) { saveTimer = 0; saveGame(); }
+  }
 
   // NPCがプレイヤーの方を向く
   if (npc && player.pos.distanceTo(npc.position) < 12) {
@@ -2147,3 +2290,6 @@ function animate() {
   composer.render();
 }
 animate();
+
+// 開発用フック(自動テスト・デバッグ)
+window.__debug = { game, player, LOC, enemies, cam, collectShard, updateQuest };

@@ -32,12 +32,13 @@ canvas{display:block}
   text-shadow:0 0 40px rgba(232,200,122,.35),0 2px 8px rgba(0,0,0,.8);
 }
 #title .en{color:#8d8470;letter-spacing:.6em;font-size:12px;text-indent:.6em}
-#startBtn{
+#startBtn,#contBtn{
   margin-top:30px;padding:14px 64px;font-size:17px;letter-spacing:.4em;text-indent:.4em;
   color:var(--ink);background:rgba(0,0,0,.35);border:1px solid rgba(232,200,122,.55);
   cursor:pointer;font-family:inherit;transition:all .35s;
 }
-#startBtn:hover{background:rgba(232,200,122,.18);box-shadow:0 0 24px rgba(232,200,122,.25)}
+#contBtn{margin-top:0;border-color:rgba(150,170,160,.5)}
+#startBtn:hover,#contBtn:hover{background:rgba(232,200,122,.18);box-shadow:0 0 24px rgba(232,200,122,.25)}
 #title .hint{color:#7a7363;font-size:12px;letter-spacing:.15em;margin-top:8px;line-height:2}
 
 /* ===== オープニング / エンディング ナレーション ===== */
@@ -165,7 +166,7 @@ canvas{display:block}
   <div id="notice"></div>
   <div id="controls">
     <b>WASD</b> 移動　<b>マウス</b> 視点　<b>Shift</b> ダッシュ　<b>Space</b> ジャンプ<br>
-    <b>左クリック</b> 攻撃　<b>E</b> 調べる / 話す
+    <b>左クリック</b> 攻撃　<b>右クリック/C</b> 回避　<b>E</b> 調べる / 話す
   </div>
 </div>
 
@@ -178,6 +179,7 @@ canvas{display:block}
   <h1>風ノ残響</h1>
   <div class="en">ECHOES OF THE WIND</div>
   <button id="startBtn">旅 を 始 め る</button>
+  <button id="contBtn" style="display:none">続 き か ら</button>
   <div class="hint">推奨：PC・マウス操作／クリックで視点操作が始まります</div>
 </div>
 
