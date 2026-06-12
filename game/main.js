@@ -3,6 +3,10 @@
 //  オープンワールド・アクションRPG プロトタイプ
 // ============================================================
 import * as THREE from 'three';
+import { EffectComposer } from './lib/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from './lib/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from './lib/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from './lib/jsm/postprocessing/OutputPass.js';
 
 // ------------------------------------------------------------
 // 定数
@@ -84,10 +88,18 @@ scene.fog = new THREE.Fog(0xcfd8d2, 90, 760);
 
 const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.1, 2400);
 
+// ポストプロセス(ブルーム:夕陽・発光体・剣戟エフェクトの輝き)
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.32, 0.7, 0.82);
+composer.addPass(bloomPass);
+composer.addPass(new OutputPass());
+
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
 });
 
 // ------------------------------------------------------------
@@ -204,33 +216,36 @@ scene.add(sky);
 // ------------------------------------------------------------
 // 地形メッシュ(頂点カラー)
 // ------------------------------------------------------------
+const _tc = {
+  grass: new THREE.Color(0x8fae6a), dry: new THREE.Color(0xb3b878),
+  rock: new THREE.Color(0x8d8678), sand: new THREE.Color(0xcbbd91),
+  snow: new THREE.Color(0xe8e9e4), n: V3(),
+};
+function terrainColorAt(x, z, out) {
+  const h = terrainHeight(x, z);
+  terrainNormal(x, z, _tc.n);
+  const slope = 1 - _tc.n.y;
+  const patch = fbm(x * 0.013 + 50, z * 0.013 + 21);
+  out.copy(_tc.grass).lerp(_tc.dry, smoothstep(0.45, 0.75, patch));
+  out.lerp(_tc.sand, smoothstep(WATER_LEVEL + 3.5, WATER_LEVEL + 0.5, h));
+  out.lerp(_tc.rock, smoothstep(0.16, 0.34, slope));
+  out.lerp(_tc.snow, smoothstep(58, 75, h) * (1 - smoothstep(0.3, 0.5, slope)));
+  const tint = 0.92 + fbm(x * 0.05, z * 0.05) * 0.16;
+  out.multiplyScalar(tint);
+  return out;
+}
 function buildTerrain() {
   const seg = 256;
   const geo = new THREE.PlaneGeometry(WORLD, WORLD, seg, seg);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
   const colors = new Float32Array(pos.count * 3);
-  const cGrass = new THREE.Color(0x8fae6a);
-  const cGrassDry = new THREE.Color(0xb3b878);
-  const cRock = new THREE.Color(0x8d8678);
-  const cSand = new THREE.Color(0xcbbd91);
-  const cSnow = new THREE.Color(0xe8e9e4);
   const c = new THREE.Color();
-  const n = V3();
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i);
-    const h = terrainHeight(x, z);
-    pos.setY(i, h);
-    terrainNormal(x, z, n);
-    const slope = 1 - n.y;
-    const patch = fbm(x * 0.013 + 50, z * 0.013 + 21);
-    c.copy(cGrass).lerp(cGrassDry, smoothstep(0.45, 0.75, patch));
-    c.lerp(cSand, smoothstep(WATER_LEVEL + 3.5, WATER_LEVEL + 0.5, h));
-    c.lerp(cRock, smoothstep(0.16, 0.34, slope));
-    c.lerp(cSnow, smoothstep(58, 75, h) * (1 - smoothstep(0.3, 0.5, slope)));
-    // わずかな明度ゆらぎ
-    const tint = 0.92 + fbm(x * 0.05, z * 0.05) * 0.16;
-    colors[i * 3] = c.r * tint; colors[i * 3 + 1] = c.g * tint; colors[i * 3 + 2] = c.b * tint;
+    pos.setY(i, terrainHeight(x, z));
+    terrainColorAt(x, z, c);
+    colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   geo.computeVertexNormals();
@@ -261,15 +276,37 @@ const heightTex = (() => {
   return tex;
 })();
 
+// 地形カラーマップ(草を地面の色に馴染ませる)
+const colorTex = (() => {
+  const N = 256;
+  const data = new Uint8Array(N * N * 4);
+  const c = new THREE.Color();
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const x = (i / (N - 1) - 0.5) * WORLD;
+      const z = (j / (N - 1) - 0.5) * WORLD;
+      terrainColorAt(x, z, c);
+      const k = (j * N + i) * 4;
+      data[k] = c.r * 255; data[k + 1] = c.g * 255; data[k + 2] = c.b * 255; data[k + 3] = 255;
+    }
+  }
+  const tex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  return tex;
+})();
+
 // ------------------------------------------------------------
 // 草原(インスタンシング + 頂点シェーダーで無限ラップ)
 // ------------------------------------------------------------
-const GRASS_COUNT = 42000;
+const GRASS_COUNT = 52000;
 const GRASS_TILE = 190;
 const grassUniforms = {
   uTime: { value: 0 },
   uCenter: { value: new THREE.Vector2() },
   uHeightTex: { value: heightTex },
+  uColorTex: { value: colorTex },
   uWorld: { value: WORLD },
   uTile: { value: GRASS_TILE },
   uSunCol: { value: new THREE.Color(1, 0.95, 0.85) },
@@ -282,8 +319,8 @@ function buildGrass() {
   // 1本 = 細い三角形ブレード(4頂点・2三角形で湾曲)
   const blade = new THREE.BufferGeometry();
   const verts = new Float32Array([
-    -0.06, 0, 0, 0.06, 0, 0, -0.028, 0.62, 0,
-    0.028, 0.62, 0, 0, 1.15, 0,
+    -0.042, 0, 0, 0.042, 0, 0, -0.02, 0.62, 0,
+    0.02, 0.62, 0, 0, 1.15, 0,
   ]);
   const uv = new Float32Array([0, 0, 0, 0, 0, 0.55, 0, 0.55, 0, 1]);
   blade.setAttribute('position', new THREE.BufferAttribute(verts, 3));
@@ -317,16 +354,19 @@ function buildGrass() {
       uniform float uTime;
       uniform vec2 uCenter;
       uniform sampler2D uHeightTex;
+      uniform sampler2D uColorTex;
       uniform float uWorld;
       uniform float uTile;
       varying float vShade;
       varying float vTip;
       varying float vFogDepth;
       varying vec3 vColMix;
+      varying vec3 vGroundCol;
       void main(){
         // タイル内オフセットをプレイヤー中心にラップ → 無限草原
         vec2 wpos = aOffset + uTile * floor((uCenter - aOffset)/uTile + 0.5);
         float h = texture2D(uHeightTex, wpos/uWorld + 0.5).r;
+        vGroundCol = texture2D(uColorTex, wpos/uWorld + 0.5).rgb;
 
         float dist = distance(wpos, uCenter);
         float scale = (0.7 + aRand.z*0.75);
@@ -366,10 +406,12 @@ function buildGrass() {
       varying float vTip;
       varying float vFogDepth;
       varying vec3 vColMix;
+      varying vec3 vGroundCol;
       void main(){
-        vec3 base = mix(vec3(0.18,0.30,0.12), vec3(0.55,0.66,0.27), vTip);
-        base = mix(base, vec3(0.62,0.64,0.30), vColMix.x*0.45);     // 乾いた色味
-        base += vec3(0.06,0.04,0.0) * vColMix.y;
+        // 根元は地面の色、先端へ行くほど明るく黄みがかる
+        vec3 base = vGroundCol * mix(0.55, 1.35, vTip);
+        base += vec3(0.10, 0.08, -0.02) * vTip * (0.4 + vColMix.x*0.6);
+        base = mix(base, base * vec3(1.08,1.02,0.7), vColMix.y*0.35);
         vec3 col = base * (uAmbCol + uSunCol * vShade);
         float fogF = smoothstep(uFogNear, uFogFar, vFogDepth);
         col = mix(col, uFogColor, fogF);
@@ -379,8 +421,9 @@ function buildGrass() {
   const mesh = new THREE.Mesh(geo, mat);
   mesh.frustumCulled = false;
   scene.add(mesh);
+  return geo;
 }
-buildGrass();
+const grassGeo = buildGrass();
 
 // ------------------------------------------------------------
 // 水面
@@ -1008,6 +1051,158 @@ const npc = buildNPC();
 }
 
 // ------------------------------------------------------------
+// サウンド(全て手続き生成・外部ファイル不要)
+// ------------------------------------------------------------
+const audio = {
+  ctx: null, master: null, windGain: null, musicGain: null,
+  init() {
+    if (this.ctx) return;
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    this.ctx = ctx;
+    this.master = ctx.createGain();
+    this.master.gain.value = 0.7;
+    this.master.connect(ctx.destination);
+
+    // ---- 風(ループするノイズ + ゆらぎ) ----
+    const len = ctx.sampleRate * 4;
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++) {
+      last = last * 0.97 + (Math.random() * 2 - 1) * 0.03; // ブラウンノイズ風
+      d[i] = last * 8;
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf; src.loop = true;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 480; lp.Q.value = 0.4;
+    this.windGain = ctx.createGain();
+    this.windGain.gain.value = 0.12;
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.07;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = 0.06;
+    lfo.connect(lfoGain).connect(this.windGain.gain);
+    src.connect(lp).connect(this.windGain).connect(this.master);
+    src.start(); lfo.start();
+
+    // ---- 環境音楽(ゆっくり移ろうパッド) ----
+    this.musicGain = ctx.createGain();
+    this.musicGain.gain.value = 0.05;
+    this.musicGain.connect(this.master);
+    const chords = [
+      [220.0, 261.6, 329.6],   // Am
+      [174.6, 220.0, 261.6],   // F
+      [196.0, 246.9, 293.7],   // G
+      [164.8, 220.0, 246.9],   // Em-ish
+    ];
+    let ci = 0;
+    const playChord = () => {
+      if (!this.ctx) return;
+      const t = ctx.currentTime;
+      for (const f of chords[ci % chords.length]) {
+        for (const det of [-2.5, 2.5]) {
+          const o = ctx.createOscillator();
+          o.type = 'triangle';
+          o.frequency.value = f; o.detune.value = det;
+          const g = ctx.createGain();
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(0.16, t + 4);
+          g.gain.linearRampToValueAtTime(0, t + 11);
+          o.connect(g).connect(this.musicGain);
+          o.start(t); o.stop(t + 11.5);
+        }
+      }
+      ci++;
+      setTimeout(playChord, 8000);
+    };
+    playChord();
+    // ---- 小鳥(昼のみ・ランダム) ----
+    const bird = () => {
+      if (this.ctx && skyUniforms.uNight.value < 0.3 && Math.random() < 0.65) {
+        const t = ctx.currentTime;
+        const n = 2 + Math.floor(Math.random() * 3);
+        const base = 2400 + Math.random() * 1400;
+        for (let i = 0; i < n; i++) {
+          const o = ctx.createOscillator();
+          o.type = 'sine';
+          const t0 = t + i * 0.12 + Math.random() * 0.04;
+          o.frequency.setValueAtTime(base * (1 + Math.random() * 0.2), t0);
+          o.frequency.exponentialRampToValueAtTime(base * 0.8, t0 + 0.09);
+          const g = ctx.createGain();
+          g.gain.setValueAtTime(0, t0);
+          g.gain.linearRampToValueAtTime(0.025, t0 + 0.02);
+          g.gain.linearRampToValueAtTime(0, t0 + 0.1);
+          o.connect(g).connect(this.master);
+          o.start(t0); o.stop(t0 + 0.12);
+        }
+      }
+      setTimeout(bird, 3500 + Math.random() * 7000);
+    };
+    setTimeout(bird, 2500);
+  },
+  blip(freq = 880, dur = 0.05, vol = 0.05, type = 'sine') {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const o = this.ctx.createOscillator();
+    o.type = type; o.frequency.value = freq;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g).connect(this.master);
+    o.start(t); o.stop(t + dur + 0.02);
+  },
+  noiseBurst(dur = 0.18, freq = 1800, vol = 0.14, sweep = 0.4) {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const len = Math.ceil(ctx.sampleRate * dur);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.Q.value = 1.2;
+    bp.frequency.setValueAtTime(freq, t);
+    bp.frequency.exponentialRampToValueAtTime(Math.max(80, freq * sweep), t + dur);
+    const g = ctx.createGain();
+    g.gain.value = vol;
+    src.connect(bp).connect(g).connect(this.master);
+    src.start(t);
+  },
+  sword() { this.noiseBurst(0.16, 2400, 0.12, 0.25); },
+  hit() {
+    this.noiseBurst(0.1, 900, 0.16, 0.5);
+    this.blip(120, 0.12, 0.12, 'square');
+  },
+  hurt() { this.blip(110, 0.25, 0.16, 'sawtooth'); this.noiseBurst(0.2, 400, 0.1, 0.4); },
+  pickup() { this.blip(880, 0.1, 0.06); setTimeout(() => this.blip(1320, 0.14, 0.06), 70); },
+  shard() {
+    [523, 659, 784, 1047, 1319].forEach((f, i) => setTimeout(() => this.blip(f, 0.5, 0.05), i * 130));
+  },
+  kill() { this.noiseBurst(0.35, 700, 0.12, 0.2); },
+  roar() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const o = this.ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(55, t);
+    o.frequency.exponentialRampToValueAtTime(180, t + 0.6);
+    o.frequency.exponentialRampToValueAtTime(40, t + 1.6);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.001, t);
+    g.gain.exponentialRampToValueAtTime(0.22, t + 0.3);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 1.8);
+    const lp = this.ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 600;
+    o.connect(lp).connect(g).connect(this.master);
+    o.start(t); o.stop(t + 2);
+    this.noiseBurst(1.2, 200, 0.14, 0.3);
+  },
+  dialogBlip() { this.blip(660, 0.04, 0.03); },
+};
+
+// ------------------------------------------------------------
 // 入力
 // ------------------------------------------------------------
 const keys = {};
@@ -1096,6 +1291,7 @@ function startDialog(lines, onEnd) {
   ui.dialog.classList.add('show');
 }
 function showDialogLine() {
+  audio.dialogBlip();
   const l = dialogState.lines[dialogState.idx];
   ui.dialogName.textContent = l.name ? `― ${l.name} ―` : '';
   ui.dialogBody.textContent = l.text;
@@ -1169,6 +1365,7 @@ function damagePlayer(amount, fromPos) {
   if (player.invulnT > 0 || player.dead || !game.started) return;
   player.hp = Math.max(0, player.hp - amount);
   player.invulnT = 1.0;
+  audio.hurt();
   renderHearts();
   flashVignette(false);
   shake = 0.35;
@@ -1183,6 +1380,7 @@ function damagePlayer(amount, fromPos) {
   }
 }
 function healPlayer(amount) {
+  audio.pickup();
   player.hp = Math.min(player.maxHp, player.hp + amount);
   renderHearts();
   flashVignette(true);
@@ -1281,6 +1479,7 @@ function collectShard(key) {
   if (game.shards[key]) return;
   game.shards[key] = true;
   game.shardCount++;
+  audio.shard();
   const s = shards[key];
   spawnParticles(s.position, 40, 0x7fd8c8, 5, 1.2, 3);
   scene.remove(s);
@@ -1326,6 +1525,7 @@ function checkBossTrigger() {
     boss = spawnEnemy('boss', LOC.altar.x, LOC.altar.z - 10);
     ui.bossName.textContent = '影 ノ 獣';
     ui.bossbar.classList.add('show');
+    audio.roar();
     showNotice('封印が、破られた');
     shake = 0.8;
     spawnParticles(boss.pos.clone().add(new THREE.Vector3(0, 2, 0)), 80, 0x8a2aff, 8, 1.5, 4);
@@ -1359,6 +1559,7 @@ function tryAttack() {
   if (player.attackT > 0 || player.dead || dialogState.active || narrationState.active) return;
   player.attackT = 0.42;
   player.attackCombo = (player.attackCombo + 1) % 2;
+  audio.sword();
   // ヒット判定
   for (const e of enemies) {
     if (e.dead) continue;
@@ -1374,6 +1575,7 @@ function tryAttack() {
 function damageEnemy(e, amount) {
   e.hp -= amount;
   e.hurtT = 0.25;
+  audio.hit();
   shake = Math.max(shake, 0.15);
   _v1.copy(e.pos).y += 1;
   spawnParticles(_v1, 12, e.type === 'slime' ? 0x9ad84a : 0x8a2aff, 5, 0.5, 2.5);
@@ -1386,6 +1588,7 @@ function damageEnemy(e, amount) {
   if (e.hp <= 0 && !e.dead) {
     e.dead = true;
     e.deathT = 0.8;
+    audio.kill();
     _v1.copy(e.pos).y += 1;
     spawnParticles(_v1, 30, e.type === 'slime' ? 0x9ad84a : 0xb86aff, 6, 1, 3);
     if (e.type !== 'boss' && Math.random() < 0.45) dropHeart(e.pos);
@@ -1730,6 +1933,79 @@ function updateDayNight(dt) {
 const _c1 = new THREE.Color(), _c2 = new THREE.Color(), _c3 = new THREE.Color();
 
 // ------------------------------------------------------------
+// 目標コンパス(方向矢印 + 距離)
+// ------------------------------------------------------------
+const obDirArrow = document.querySelector('#objective .dist .arrow');
+const obDirM = document.querySelector('#objective .dist .m');
+function questTarget() {
+  switch (game.quest) {
+    case 'intro': case 'return': return LOC.camp;
+    case 'shards': {
+      let best = null, bd = Infinity;
+      for (const k of ['A', 'B', 'C']) {
+        if (game.shards[k]) continue;
+        const loc = k === 'A' ? LOC.shrineA : k === 'B' ? LOC.shrineB : LOC.shrineC;
+        const d = player.pos.distanceTo(loc);
+        if (d < bd) { bd = d; best = loc; }
+      }
+      return best;
+    }
+    case 'altar': case 'boss': return LOC.altar;
+    default: return null;
+  }
+}
+function updateCompass() {
+  const t = questTarget();
+  if (!t) { obDirArrow.style.display = 'none'; obDirM.textContent = ''; return; }
+  obDirArrow.style.display = 'inline-block';
+  const dx = t.x - player.pos.x, dz = t.z - player.pos.z;
+  const dist = Math.hypot(dx, dz);
+  // 画面上方向 = カメラ前方として相対角度を矢印に反映
+  const worldAng = Math.atan2(dx, dz);
+  const rel = worldAng - cam.yaw;
+  obDirArrow.style.transform = `rotate(${(-rel * 180 / Math.PI - 90).toFixed(1)}deg)`;
+  obDirM.textContent = `${Math.round(dist)} m`;
+}
+
+// ------------------------------------------------------------
+// ホタル(夜の草原に灯る)
+// ------------------------------------------------------------
+const FIREFLY_N = 90;
+const fireflies = (() => {
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(FIREFLY_N * 3);
+  const seeds = [];
+  for (let i = 0; i < FIREFLY_N; i++) {
+    seeds.push({ a: rand(Math.PI * 2), r: rand(45, 6), s: rand(1.5, 0.3), ph: rand(10) });
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const mat = new THREE.PointsMaterial({
+    color: 0xc8e86a, size: 0.16, transparent: true, opacity: 0,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const points = new THREE.Points(geo, mat);
+  points.frustumCulled = false;
+  scene.add(points);
+  return { geo, pos, seeds, mat, points };
+})();
+function updateFireflies(time) {
+  const nightF = skyUniforms.uNight.value;
+  const target = nightF > 0.4 ? 0.85 : 0;
+  fireflies.mat.opacity = lerp(fireflies.mat.opacity, target, 0.02);
+  fireflies.points.visible = fireflies.mat.opacity > 0.01;
+  if (!fireflies.points.visible) return;
+  for (let i = 0; i < FIREFLY_N; i++) {
+    const f = fireflies.seeds[i];
+    const a = f.a + time * 0.04 * f.s;
+    const x = player.pos.x + Math.cos(a) * f.r + Math.sin(time * f.s + f.ph) * 3;
+    const z = player.pos.z + Math.sin(a) * f.r + Math.cos(time * f.s * 0.8 + f.ph) * 3;
+    const y = terrainHeight(x, z) + 0.8 + Math.sin(time * 1.3 * f.s + f.ph) * 0.6;
+    fireflies.pos[i * 3] = x; fireflies.pos[i * 3 + 1] = y; fireflies.pos[i * 3 + 2] = z;
+  }
+  fireflies.geo.attributes.position.needsUpdate = true;
+}
+
+// ------------------------------------------------------------
 // インタラクションプロンプト更新
 // ------------------------------------------------------------
 function updatePrompt() {
@@ -1775,6 +2051,7 @@ function updatePickups(dt, time) {
 ui.loading.classList.add('hidden');
 
 document.getElementById('startBtn').addEventListener('click', () => {
+  audio.init();
   ui.title.classList.add('hidden');
   startNarration([
     '百年前、世界は「影ノ獣」に呑まれた。',
@@ -1790,6 +2067,31 @@ document.getElementById('startBtn').addEventListener('click', () => {
     renderer.domElement.requestPointerLock?.();
   });
 });
+
+// ------------------------------------------------------------
+// 自動品質調整(平均FPSが低ければ段階的に軽量化)
+// ------------------------------------------------------------
+const quality = { level: 0, accum: 0, frames: 0, timer: 0 };
+function checkQuality(dt) {
+  if (quality.level >= 3) return;
+  quality.accum += dt; quality.frames++; quality.timer += dt;
+  if (quality.timer < 4) return;
+  const avgFps = quality.frames / quality.accum;
+  quality.accum = quality.frames = quality.timer = 0;
+  if (avgFps >= 40) return;
+  quality.level++;
+  if (quality.level === 1) {
+    bloomPass.enabled = false;
+  } else if (quality.level === 2) {
+    renderer.setPixelRatio(1);
+    composer.setSize(innerWidth, innerHeight);
+  } else if (quality.level === 3) {
+    grassGeo.instanceCount = Math.floor(GRASS_COUNT / 2.5);
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.map?.dispose();
+    sun.shadow.map = null;
+  }
+}
 
 // ------------------------------------------------------------
 // メインループ
@@ -1816,7 +2118,10 @@ function animate() {
   updateParticles(dt);
   updatePickups(dt, elapsed);
   updatePrompt();
+  updateCompass();
+  updateFireflies(elapsed);
   checkBossTrigger();
+  if (game.started) checkQuality(dt);
 
   // NPCがプレイヤーの方を向く
   if (npc && player.pos.distanceTo(npc.position) < 12) {
@@ -1839,6 +2144,6 @@ function animate() {
     if (b.visible) b.material.opacity = 0.22 + Math.sin(elapsed * 2.2) * 0.08;
   }
 
-  renderer.render(scene, camera);
+  composer.render();
 }
 animate();

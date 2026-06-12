@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>風ノ残響 — Echoes of the Wind</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🍃</text></svg>">
 <style>
 :root{
   --gold:#e8c87a;
@@ -71,6 +72,8 @@ canvas{display:block}
 }
 #objective .label{font-size:11px;color:var(--gold);letter-spacing:.35em;margin-bottom:4px}
 #objective .text{font-size:15px;letter-spacing:.08em;line-height:1.8}
+#objective .dist{font-size:12px;color:#b8ab8c;margin-top:4px;display:flex;justify-content:flex-end;align-items:center;gap:6px}
+#objective .dist .arrow{display:inline-block;transition:transform .15s linear;color:var(--gold)}
 
 #prompt{
   position:absolute;left:50%;top:58%;transform:translateX(-50%);
@@ -154,7 +157,8 @@ canvas{display:block}
 <div id="hud">
   <div id="hearts"></div>
   <div id="stamina"><div id="staminaFill"></div></div>
-  <div id="objective"><div class="label">— 目 標 —</div><div class="text"></div></div>
+  <div id="objective"><div class="label">— 目 標 —</div><div class="text"></div>
+    <div class="dist"><span class="arrow">➤</span><span class="m"></span></div></div>
   <div id="prompt"><b>E</b><span></span></div>
   <div id="bossbar"><div class="name"></div><div class="bar"><div class="fill"></div></div></div>
   <div id="dialog"><div class="name"></div><div class="body"></div><div class="next">▼ クリックで次へ</div></div>
