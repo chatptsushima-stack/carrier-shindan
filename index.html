@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>スマホ料金 見直し診断 | 月々の通信費、いくら下がる？</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Old+Mincho:wght@500;700;900&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EDF1F3;
+  --paper:#FFFFFF;
+  --ink:#1A2433;
+  --ink-soft:#5A6679;
+  --line:#D9E0E5;
+  --accent:#C8401F;       /* 朱肉の赤：印鑑・強調のみ */
+  --save:#0B7A5C;          /* 節約額の緑 */
+  --save-bg:#E8F4EF;
+  --focus:#2B5FAF;
+  --radius:14px;
+  font-size:16px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:"Zen Kaku Gothic New",sans-serif;
+  background:var(--bg);
+  color:var(--ink);
+  line-height:1.7;
+  min-height:100vh;
+}
+.serif{font-family:"Zen Old Mincho",serif}
+.num{font-variant-numeric:tabular-nums;letter-spacing:.01em}
+
+/* ===== ヘッダー ===== */
+header{
+  background:var(--paper);
+  border-bottom:1px solid var(--line);
+}
+.header-inner{
+  max-width:1180px;margin:0 auto;padding:48px 32px 40px;
+  display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap;
+}
+.eyebrow{
+  font-size:.78rem;letter-spacing:.28em;color:var(--accent);font-weight:700;margin-bottom:10px;
+}
+h1{
+  font-family:"Zen Old Mincho",serif;font-weight:900;
+  font-size:clamp(1.8rem,3.4vw,2.7rem);line-height:1.3;letter-spacing:.04em;
+}
+h1 .red{color:var(--accent)}
+.header-sub{color:var(--ink-soft);font-size:.95rem;max-width:430px}
+
+/* ===== レイアウト ===== */
+main{max-width:1180px;margin:0 auto;padding:40px 32px 80px;
+  display:grid;grid-template-columns:430px 1fr;gap:36px;align-items:start;}
+@media(max-width:920px){main{grid-template-columns:1fr}}
+
+/* ===== 入力フォーム ===== */
+.form-card{
+  background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);
+  padding:32px 30px;position:sticky;top:24px;
+}
+.form-title{
+  font-family:"Zen Old Mincho",serif;font-weight:700;font-size:1.15rem;
+  padding-bottom:14px;margin-bottom:22px;border-bottom:2px solid var(--ink);
+  display:flex;align-items:center;gap:10px;
+}
+.form-title::before{content:"";width:10px;height:10px;background:var(--accent);border-radius:50%}
+.field{margin-bottom:24px}
+.field label.lbl{display:block;font-weight:700;font-size:.92rem;margin-bottom:8px}
+.field .hint{font-size:.78rem;color:var(--ink-soft);margin-top:6px}
+select,input[type=number]{
+  width:100%;padding:12px 14px;font:inherit;font-size:1rem;color:var(--ink);
+  background:#FAFBFC;border:1.5px solid var(--line);border-radius:8px;outline:none;
+}
+select:focus,input[type=number]:focus{border-color:var(--focus);box-shadow:0 0 0 3px rgba(43,95,175,.15)}
+.yen-wrap{position:relative}
+.yen-wrap input{padding-right:64px}
+.yen-wrap::after{content:"円/月";position:absolute;right:14px;top:50%;transform:translateY(-50%);color:var(--ink-soft);font-size:.85rem}
+
+/* スライダー */
+.slider-row{display:flex;align-items:center;gap:16px}
+input[type=range]{flex:1;accent-color:var(--ink);height:6px;cursor:pointer}
+.gb-display{
+  min-width:96px;text-align:center;background:#FAFBFC;border:1.5px solid var(--line);
+  border-radius:8px;padding:8px 4px;font-weight:700;font-size:1.05rem;
+}
+.gb-display small{display:block;font-weight:400;font-size:.68rem;color:var(--ink-soft)}
+
+/* ラジオ（通話・重視ポイント） */
+.radio-group{display:grid;gap:8px}
+.radio-group.cols2{grid-template-columns:1fr 1fr}
+.radio-opt input{position:absolute;opacity:0}
+.radio-opt span{
+  display:block;padding:11px 14px;border:1.5px solid var(--line);border-radius:8px;
+  font-size:.88rem;cursor:pointer;background:#FAFBFC;transition:all .15s;
+}
+.radio-opt span b{display:block;font-size:.9rem}
+.radio-opt span small{color:var(--ink-soft);font-size:.76rem}
+.radio-opt input:checked + span{
+  border-color:var(--ink);background:var(--ink);color:#fff;
+}
+.radio-opt input:checked + span small{color:#C8D2E0}
+.radio-opt input:focus-visible + span{box-shadow:0 0 0 3px rgba(43,95,175,.3)}
+
+button.run{
+  width:100%;padding:16px;margin-top:6px;
+  font-family:"Zen Old Mincho",serif;font-weight:700;font-size:1.1rem;letter-spacing:.18em;
+  color:#fff;background:var(--ink);border:none;border-radius:10px;cursor:pointer;
+  transition:transform .12s, background .15s;
+}
+button.run:hover{background:#2B3A52;transform:translateY(-1px)}
+button.run:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+
+/* ===== 結果エリア ===== */
+.result-area{min-height:400px}
+.placeholder{
+  border:2px dashed var(--line);border-radius:var(--radius);
+  padding:80px 40px;text-align:center;color:var(--ink-soft);background:rgba(255,255,255,.5);
+}
+.placeholder .big{font-family:"Zen Old Mincho",serif;font-size:1.3rem;color:var(--ink);margin-bottom:10px}
+
+/* 節約サマリー（明細書スタイル） */
+.summary-card{
+  position:relative;background:var(--paper);border:1px solid var(--line);
+  border-radius:var(--radius);padding:36px 40px 32px;margin-bottom:28px;overflow:hidden;
+}
+.summary-card::before{ /* 明細書の上端ライン */
+  content:"";position:absolute;top:0;left:0;right:0;height:6px;
+  background:repeating-linear-gradient(90deg,var(--ink) 0 24px,transparent 24px 32px);
+}
+.summary-head{
+  display:flex;justify-content:space-between;align-items:flex-start;gap:16px;
+  border-bottom:1px solid var(--line);padding-bottom:18px;margin-bottom:20px;
+}
+.summary-head h2{font-family:"Zen Old Mincho",serif;font-size:1.35rem;font-weight:700;letter-spacing:.08em}
+.summary-head .date{font-size:.78rem;color:var(--ink-soft)}
+.compare-rows{display:grid;gap:0}
+.crow{
+  display:flex;justify-content:space-between;align-items:baseline;
+  padding:12px 2px;border-bottom:1px dashed var(--line);font-size:.95rem;
+}
+.crow .label{color:var(--ink-soft)}
+.crow .val{font-weight:700;font-size:1.15rem}
+.crow.total{border-bottom:none;border-top:2px solid var(--ink);margin-top:4px;padding-top:16px}
+.crow.total .label{color:var(--ink);font-weight:700;font-size:1rem}
+.crow.total .val{font-family:"Zen Old Mincho",serif;font-size:2.1rem;font-weight:900;color:var(--save)}
+.crow.total .val.zero{color:var(--ink-soft);font-size:1.3rem}
+.yearly{
+  margin-top:14px;background:var(--save-bg);border-radius:8px;padding:12px 18px;
+  font-size:.92rem;color:var(--save);font-weight:700;display:flex;justify-content:space-between;align-items:center;
+}
+.yearly span.num{font-size:1.3rem}
+
+/* 印鑑スタンプ */
+.hanko{
+  position:absolute;top:30px;right:36px;width:84px;height:84px;border-radius:50%;
+  border:3px solid var(--accent);color:var(--accent);
+  display:flex;align-items:center;justify-content:center;
+  font-family:"Zen Old Mincho",serif;font-weight:900;font-size:1.05rem;letter-spacing:.1em;
+  writing-mode:vertical-rl;text-orientation:upright;
+  transform:rotate(-8deg) scale(1);opacity:.9;
+  mix-blend-mode:multiply;
+}
+.hanko.stamp-in{animation:stamp .45s cubic-bezier(.2,1.6,.4,1) both}
+@keyframes stamp{
+  0%{transform:rotate(-8deg) scale(2.4);opacity:0}
+  60%{transform:rotate(-8deg) scale(.94);opacity:1}
+  100%{transform:rotate(-8deg) scale(1);opacity:.9}
+}
+@media(prefers-reduced-motion:reduce){.hanko.stamp-in{animation:none}}
+
+/* ランキングカード */
+.rank-list{display:grid;gap:18px}
+.rank-card{
+  background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);
+  padding:26px 30px;display:grid;grid-template-columns:64px 1fr auto;gap:22px;align-items:center;
+}
+.rank-card.first{border:2px solid var(--ink)}
+.rank-no{
+  font-family:"Zen Old Mincho",serif;font-weight:900;font-size:2rem;text-align:center;
+  color:var(--line);line-height:1;
+}
+.rank-card.first .rank-no{color:var(--accent)}
+.rank-no small{display:block;font-size:.62rem;letter-spacing:.2em;color:var(--ink-soft);font-weight:500;margin-top:4px}
+.rank-body h3{font-size:1.2rem;font-weight:700;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tag{
+  font-size:.68rem;font-weight:700;padding:3px 9px;border-radius:99px;
+  background:#EEF2F6;color:var(--ink-soft);letter-spacing:.05em;
+}
+.tag.line-tag{background:#E9EEF8;color:#2B5FAF}
+.rank-body .plan-name{font-size:.85rem;color:var(--ink-soft);margin-top:2px}
+.rank-body .features{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px}
+.feat{
+  font-size:.76rem;background:#F4F6F8;border:1px solid var(--line);
+  border-radius:6px;padding:3px 10px;color:var(--ink-soft);
+}
+.rank-price{text-align:right;min-width:150px}
+.rank-price .monthly{font-family:"Zen Old Mincho",serif;font-weight:900;font-size:1.9rem;line-height:1.1}
+.rank-price .monthly small{font-size:.8rem;font-weight:500;color:var(--ink-soft)}
+.rank-price .diff{font-size:.85rem;font-weight:700;margin-top:6px}
+.diff.minus{color:var(--save)}
+.diff.plus{color:var(--accent)}
+.diff.even{color:var(--ink-soft)}
+
+/* 比較テーブル */
+.table-card{
+  background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);
+  padding:28px 30px;margin-top:28px;
+}
+.table-card h2{font-family:"Zen Old Mincho",serif;font-size:1.1rem;font-weight:700;margin-bottom:16px;letter-spacing:.08em}
+table{width:100%;border-collapse:collapse;font-size:.88rem}
+th,td{padding:11px 12px;text-align:left;border-bottom:1px solid var(--line)}
+th{font-size:.76rem;letter-spacing:.08em;color:var(--ink-soft);font-weight:700;border-bottom:2px solid var(--ink)}
+td.price{font-weight:700;text-align:right}
+td.right,th.right{text-align:right}
+tr.best td{background:var(--save-bg)}
+.note{
+  margin-top:22px;font-size:.76rem;color:var(--ink-soft);line-height:1.8;
+  border-top:1px dashed var(--line);padding-top:14px;
+}
+footer{
+  text-align:center;padding:28px;color:var(--ink-soft);font-size:.78rem;border-top:1px solid var(--line);
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div>
+      <p class="eyebrow">SMARTPHONE PLAN CHECKUP</p>
+      <h1>スマホ料金、<span class="red">見直し</span>診断。</h1>
+    </div>
+    <p class="header-sub">今のキャリア・料金・使い方を入力すると、あなたに合うプランと「月いくら下がるか」を明細書スタイルで診断します。所要時間は約1分です。</p>
+  </div>
+</header>
+
+<main>
+  <!-- ===== 入力 ===== -->
+  <section class="form-card" aria-label="診断の入力">
+    <h2 class="form-title serif">現在の利用状況</h2>
+
+    <div class="field">
+      <label class="lbl" for="carrier">今のキャリア</label>
+      <select id="carrier">
+        <option value="ドコモ">ドコモ</option>
+        <option value="au">au</option>
+        <option value="ソフトバンク">ソフトバンク</option>
+        <option value="楽天モバイル">楽天モバイル</option>
+        <option value="ahamo">ahamo</option>
+        <option value="povo">povo</option>
+        <option value="LINEMO">LINEMO</option>
+        <option value="UQモバイル">UQモバイル</option>
+        <option value="ワイモバイル">ワイモバイル</option>
+        <option value="格安SIM（IIJmio・mineoなど）">格安SIM（IIJmio・mineoなど）</option>
+        <option value="その他">その他</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label class="lbl" for="fee">今の月額料金（スマホ1台分）</label>
+      <div class="yen-wrap"><input type="number" id="fee" value="7000" min="0" step="100" inputmode="numeric"></div>
+      <p class="hint">端末分割代を除いた、通信料のおおよその金額でOKです。</p>
+    </div>
+
+    <div class="field">
+      <label class="lbl" for="gb">月のデータ使用量</label>
+      <div class="slider-row">
+        <input type="range" id="gb" min="1" max="105" value="15" aria-describedby="gbval">
+        <div class="gb-display" id="gbval">15<small>GB / 月</small></div>
+      </div>
+      <p class="hint">右端まで動かすと「無制限（100GB以上）」になります。</p>
+    </div>
+
+    <div class="field">
+      <span class="lbl">通話はどのくらいかけますか？</span>
+      <div class="radio-group" role="radiogroup" aria-label="通話量">
+        <label class="radio-opt"><input type="radio" name="call" value="none" checked>
+          <span><b>ほとんどかけない</b><small>受けるだけ・LINE通話が中心</small></span></label>
+        <label class="radio-opt"><input type="radio" name="call" value="five">
+          <span><b>短い通話が多い</b><small>1回5分以内の電話をよくかける</small></span></label>
+        <label class="radio-opt"><input type="radio" name="call" value="ten">
+          <span><b>10分くらいの通話が多い</b><small>お店の予約や仕事の連絡など</small></span></label>
+        <label class="radio-opt"><input type="radio" name="call" value="unlimited">
+          <span><b>長電話をよくする</b><small>かけ放題が必要</small></span></label>
+      </div>
+    </div>
+
+    <div class="field">
+      <span class="lbl">なにを重視しますか？</span>
+      <div class="radio-group cols2" role="radiogroup" aria-label="重視ポイント">
+        <label class="radio-opt"><input type="radio" name="pref" value="price" checked>
+          <span><b>料金の安さ</b><small>とにかく節約</small></span></label>
+        <label class="radio-opt"><input type="radio" name="pref" value="quality">
+          <span><b>通信品質</b><small>速度・安定性</small></span></label>
+        <label class="radio-opt"><input type="radio" name="pref" value="shop">
+          <span><b>店舗サポート</b><small>対面で相談したい</small></span></label>
+        <label class="radio-opt"><input type="radio" name="pref" value="balance">
+          <span><b>バランス</b><small>総合的に</small></span></label>
+      </div>
+    </div>
+
+    <button class="run serif" id="runBtn">診断する</button>
+  </section>
+
+  <!-- ===== 結果 ===== -->
+  <section class="result-area" id="resultArea" aria-live="polite">
+    <div class="placeholder" id="placeholder">
+      <p class="big serif">ここに診断結果が表示されます</p>
+      <p>左のフォームに今の状況を入力して「診断する」を押してください。<br>おすすめプランと、月々・年間の節約見込み額が出ます。</p>
+    </div>
+  </section>
+</main>
+
+<footer>掲載料金は2026年6月時点の公開情報をもとにした税込の目安です。正確な料金・条件は各社公式サイトでご確認ください。</footer>
+
+<script>
+/* ===================== プランデータ（税込・2026年時点の目安） =====================
+   tiers: [GB上限, 月額] / Infinity = 無制限
+   calls: 通話ニーズ別の追加料金（0 = プランに込み, null = 非対応扱い）
+   quality: 3=キャリア回線(MNO) 2=サブブランド/楽天 1=MVNO
+   shop: 店舗サポートの有無
+================================================================================ */
+const PLANS = [
+  {
+    carrier:"楽天モバイル", plan:"Rakuten最強プラン", line:"楽天回線",
+    tiers:[[3,1078],[20,2178],[Infinity,3278]],
+    calls:{none:0, five:0, ten:0, unlimited:0},
+    callNote:"Rakuten Linkアプリ利用で国内通話無料",
+    quality:2, shop:true,
+    features:["データ無制限が3,278円","アプリ通話で国内かけ放題","楽天ポイントが貯まる"]
+  },
+  {
+    carrier:"ahamo", plan:"ahamo（30GB）/ 大盛り（110GB）", line:"ドコモ回線",
+    tiers:[[30,2970],[110,4950]],
+    calls:{none:0, five:0, ten:1100, unlimited:1100},
+    callNote:"5分以内かけ放題が標準で込み",
+    quality:3, shop:false,
+    features:["5分かけ放題込み","海外でも30GBそのまま使える","ドコモ品質の回線"]
+  },
+  {
+    carrier:"povo2.0", plan:"データトッピング", line:"au回線",
+    tiers:[[3,990],[20,2700],[60,2163],[150,2163]],
+    calls:{none:0, five:550, ten:1650, unlimited:1650},
+    callNote:"5分かけ放題+550円 / 完全かけ放題+1,650円",
+    quality:3, shop:false,
+    features:["基本料0円から組み立て","長期トッピングで割安","使わない月は維持費ほぼゼロ"]
+  },
+  {
+    carrier:"LINEMO", plan:"ベストプラン / ベストプランV", line:"ソフトバンク回線",
+    tiers:[[3,990],[10,2090],[30,3278]],
+    calls:{none:0, five:550, ten:1650, unlimited:1650},
+    callNote:"30GBのベストプランVは5分かけ放題込み",
+    quality:3, shop:false,
+    features:["LINEのデータ消費ゼロ","3GBまで990円","PayPay還元キャンペーンが手厚い"]
+  },
+  {
+    carrier:"UQモバイル", plan:"コミコミプラン+ / ミニミニプラン", line:"au回線",
+    tiers:[[4,2365],[33,3278]],
+    calls:{none:0, five:0, ten:0, unlimited:1100},
+    callNote:"33GBプランは10分かけ放題込み",
+    quality:2, shop:true,
+    features:["全国のau Style/UQスポットで相談可","10分かけ放題込み(33GB)","au回線で安定"]
+  },
+  {
+    carrier:"ワイモバイル", plan:"シンプル2 S / M / L", line:"ソフトバンク回線",
+    tiers:[[4,2365],[20,4015],[30,5115]],
+    calls:{none:0, five:880, ten:880, unlimited:1980},
+    callNote:"おうち割・家族割で最大1,650円引きあり",
+    quality:2, shop:true,
+    features:["全国のショップで対面サポート","家族割・光セット割が強い","ソフトバンク回線で安定"]
+  },
+  {
+    carrier:"ドコモ mini", plan:"ドコモ mini（4GB / 10GB）", line:"ドコモ回線",
+    tiers:[[4,2750],[10,3850]],
+    calls:{none:0, five:880, ten:880, unlimited:1980},
+    callNote:"ドコモ光・dカード割引でさらに安く",
+    quality:3, shop:true,
+    features:["ドコモショップで相談できる","ドコモ品質そのまま","光回線とのセット割あり"]
+  },
+  {
+    carrier:"IIJmio", plan:"ギガプラン", line:"ドコモ/au回線(MVNO)",
+    tiers:[[5,990],[10,1500],[15,1800],[25,2000],[35,2400],[45,2900],[55,3300]],
+    calls:{none:0, five:500, ten:700, unlimited:1400},
+    callNote:"通話定額が業界最安級",
+    quality:1, shop:false,
+    features:["料金の安さは最強クラス","容量の選択肢が豊富","昼休み時間帯は速度低下あり"]
+  },
+  {
+    carrier:"日本通信SIM", plan:"みんなのプラン / 合理的50GB", line:"ドコモ回線(MVNO)",
+    tiers:[[10,1390],[50,2178]],
+    calls:{none:0, five:0, ten:0, unlimited:1600},
+    callNote:"月70分の無料通話が標準で込み",
+    quality:1, shop:false,
+    features:["70分無料通話込みで1,390円〜","50GBでも2,178円","混雑時間帯はやや低速"]
+  }
+];
+
+const yen = n => n.toLocaleString("ja-JP");
+
+/* ---- データ使用量スライダー ---- */
+const gbInput = document.getElementById("gb");
+const gbVal = document.getElementById("gbval");
+function gbLabel(v){
+  return v >= 105 ? "無制限" : v;
+}
+gbInput.addEventListener("input", () => {
+  const v = +gbInput.value;
+  gbVal.innerHTML = v >= 105 ? "無制限<small>100GB以上</small>" : v + "<small>GB / 月</small>";
+});
+
+/* ---- 診断ロジック ---- */
+function evaluate(usage, callNeed, pref){
+  const results = [];
+  for(const p of PLANS){
+    // 必要容量を満たす最安ティアを選ぶ
+    let tier = null;
+    for(const [cap, price] of p.tiers){
+      if(cap >= usage && (tier === null || price < tier[1])) tier = [cap, price];
+    }
+    if(!tier) continue; // 容量不足
+    const callCost = p.calls[callNeed];
+    if(callCost === null) continue;
+    const total = tier[1] + callCost;
+
+    // 重視ポイントによるスコア（小さいほど上位）
+    let score = total;
+    if(pref === "quality") score += (3 - p.quality) * 900;
+    if(pref === "shop"){ if(!p.shop) score += 5000; }
+    if(pref === "balance") score += (3 - p.quality) * 400 + (p.shop ? 0 : 250);
+
+    results.push({...p, cap:tier[0], total, callCost, score});
+  }
+  results.sort((a,b) => a.score - b.score || a.total - b.total);
+  return results;
+}
+
+/* ---- 結果描画 ---- */
+const callLabels = {none:"ほとんどかけない", five:"5分以内の通話", ten:"10分程度の通話", unlimited:"かけ放題が必要"};
+
+document.getElementById("runBtn").addEventListener("click", () => {
+  const carrier = document.getElementById("carrier").value;
+  const fee = Math.max(0, +document.getElementById("fee").value || 0);
+  const rawGb = +gbInput.value;
+  const usage = rawGb >= 105 ? Infinity : rawGb;
+  const callNeed = document.querySelector("input[name=call]:checked").value;
+  const pref = document.querySelector("input[name=pref]:checked").value;
+
+  const results = evaluate(usage, callNeed, pref);
+  const area = document.getElementById("resultArea");
+
+  if(results.length === 0){
+    area.innerHTML = `<div class="placeholder"><p class="big serif">条件に合うプランが見つかりませんでした</p><p>データ使用量を見直すか、無制限プランのある楽天モバイルなどをご検討ください。</p></div>`;
+    return;
+  }
+
+  const best = results[0];
+  const diff = fee - best.total;
+  const yearlySave = Math.max(0, diff) * 12;
+  const today = new Date();
+  const dateStr = `${today.getFullYear()}年${today.getMonth()+1}月${today.getDate()}日 診断`;
+  const usageLabel = usage === Infinity ? "無制限（100GB以上）" : usage + "GB";
+
+  /* --- 節約サマリー（明細書） --- */
+  let html = `
+  <div class="summary-card">
+    <div class="hanko stamp-in" aria-hidden="true">診断済</div>
+    <div class="summary-head">
+      <h2>見直し診断 明細</h2>
+      <span class="date">${dateStr}<br>条件：${usageLabel} ／ ${callLabels[callNeed]}</span>
+    </div>
+    <div class="compare-rows">
+      <div class="crow"><span class="label">現在（${carrier}）</span><span class="val num">${yen(fee)} 円/月</span></div>
+      <div class="crow"><span class="label">おすすめ：${best.carrier}（${best.plan}）</span><span class="val num">${yen(best.total)} 円/月</span></div>
+      <div class="crow total">
+        <span class="label">毎月の節約見込み</span>
+        ${diff > 0
+          ? `<span class="val num">− ${yen(diff)} 円</span>`
+          : `<span class="val zero num">現在のプランがすでに割安です</span>`}
+      </div>
+    </div>
+    ${diff > 0 ? `<div class="yearly"><span>年間にすると</span><span><span class="num">${yen(yearlySave)}</span> 円の節約</span></div>` : ""}
+  </div>`;
+
+  /* --- おすすめTOP3 --- */
+  html += `<div class="rank-list">`;
+  results.slice(0,3).forEach((r, i) => {
+    const d = fee - r.total;
+    const diffHtml = d > 0
+      ? `<div class="diff minus num">今より −${yen(d)}円/月</div>`
+      : d < 0
+        ? `<div class="diff plus num">今より +${yen(-d)}円/月</div>`
+        : `<div class="diff even">今と同額</div>`;
+    html += `
+    <article class="rank-card${i===0 ? " first" : ""}">
+      <div class="rank-no serif">${i+1}<small>RANK</small></div>
+      <div class="rank-body">
+        <h3>${r.carrier}
+          <span class="tag line-tag">${r.line}</span>
+          ${r.shop ? `<span class="tag">店舗あり</span>` : `<span class="tag">オンライン専用</span>`}
+        </h3>
+        <p class="plan-name">${r.plan}（${r.cap === Infinity ? "無制限" : r.cap + "GB"}）｜${r.callNote}</p>
+        <div class="features">${r.features.map(f => `<span class="feat">${f}</span>`).join("")}</div>
+      </div>
+      <div class="rank-price">
+        <div class="monthly num">${yen(r.total)}<small> 円/月</small></div>
+        ${diffHtml}
+      </div>
+    </article>`;
+  });
+  html += `</div>`;
+
+  /* --- 全プラン比較表 --- */
+  html += `
+  <div class="table-card">
+    <h2>条件に合う全プランの比較</h2>
+    <table>
+      <thead><tr>
+        <th>キャリア</th><th>プラン</th><th>容量</th><th class="right">月額目安</th><th class="right">今との差額</th>
+      </tr></thead>
+      <tbody>`;
+  results.forEach((r, i) => {
+    const d = fee - r.total;
+    html += `<tr${i===0 ? ` class="best"` : ""}>
+      <td><b>${r.carrier}</b></td>
+      <td>${r.plan}</td>
+      <td>${r.cap === Infinity ? "無制限" : r.cap + "GB"}</td>
+      <td class="price num">${yen(r.total)}円</td>
+      <td class="right num" style="color:${d>0 ? "var(--save)" : d<0 ? "var(--accent)" : "var(--ink-soft)"};font-weight:700">
+        ${d>0 ? "−"+yen(d) : d<0 ? "+"+yen(-d) : "±0"}円
+      </td></tr>`;
+  });
+  html += `</tbody></table>
+    <p class="note">※ 料金は2026年6月時点の公開情報にもとづく税込の目安です。家族割・光回線セット割・キャンペーン適用でさらに安くなる場合があります（特にワイモバイル・UQモバイル・ドコモminiは割引前の金額を表示）。通話オプション料金は選択した通話量に応じて加算済みです。正式な料金・提供条件は必ず各社公式サイトでご確認ください。</p>
+  </div>`;
+
+  area.innerHTML = html;
+  area.scrollIntoView({behavior:"smooth", block:"start"});
+});
+</script>
+</body>
+</html>
