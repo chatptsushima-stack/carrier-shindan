@@ -16,6 +16,19 @@ python3 -m http.server 8000
 
 (`npx http-server` などでも可。GitHub Pages にそのままデプロイ可能)
 
+### 単一HTMLとして書き出す
+
+Three.js もゲーム本体も1ファイルに埋め込んだ配布用HTMLを作れます。
+外部リクエストを一切しないので、ファイルをそのまま開くだけで遊べます。
+
+```bash
+npm install esbuild            # 初回のみ(ESBUILD 環境変数でパスを指定可)
+node game/build-single.mjs     # → game/dist/kaze-no-zankyo.html
+```
+
+ポインターロックが許可されない環境(iframe内など)では、
+自動的に「ドラッグで視点、その場クリックで攻撃」に切り替わります。
+
 ### 操作(PC)
 
 | 入力 | 動作 |

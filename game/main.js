@@ -1436,6 +1436,16 @@ const audio = {
 // ------------------------------------------------------------
 const keys = {};
 let pointerLocked = false;
+// iframe内などポインターロックが許可されない環境ではドラッグで視点を操作する
+let lockBlocked = !document.body.requestPointerLock;
+let dragLook = null;
+document.addEventListener('pointerlockerror', () => {
+  if (lockBlocked) return;
+  lockBlocked = true;
+  showNotice('ドラッグで視点を動かせます', 3.5);
+  const guide = document.getElementById('controls');
+  if (guide) guide.innerHTML = guide.innerHTML.replace('<b>マウス</b> 視点', '<b>ドラッグ</b> 視点');
+});
 addEventListener('keydown', e => { keys[e.code] = true; });
 addEventListener('keyup', e => { keys[e.code] = false; });
 document.addEventListener('pointerlockchange', () => {
@@ -1581,9 +1591,23 @@ if (IS_TOUCH) {
   if (skip) skip.textContent = 'タップで進む';
 }
 addEventListener('mousemove', e => {
-  if (!pointerLocked) return;
-  cam.yaw -= e.movementX * 0.0024;
-  cam.pitch = clamp(cam.pitch + e.movementY * 0.0022, -0.5, 1.25);
+  if (pointerLocked) {
+    cam.yaw -= e.movementX * 0.0024;
+    cam.pitch = clamp(cam.pitch + e.movementY * 0.0022, -0.5, 1.25);
+  } else if (dragLook) {
+    const dx = e.clientX - dragLook.x, dy = e.clientY - dragLook.y;
+    dragLook.moved += Math.abs(dx) + Math.abs(dy);
+    dragLook.x = e.clientX; dragLook.y = e.clientY;
+    cam.yaw -= dx * 0.005;
+    cam.pitch = clamp(cam.pitch + dy * 0.004, -0.5, 1.25);
+  }
+});
+// ドラッグ中は攻撃せず、その場のクリック(ほぼ動かさず離した場合)だけを攻撃とみなす
+addEventListener('mouseup', () => {
+  if (!dragLook) return;
+  const quick = dragLook.moved < 8 && performance.now() - dragLook.t < 320;
+  dragLook = null;
+  if (quick) tryAttack();
 });
 addEventListener('wheel', e => {
   cam.dist = clamp(cam.dist + e.deltaY * 0.005, 3.2, 13);
@@ -2397,8 +2421,14 @@ addEventListener('mousedown', e => {
   if (narrationState.active) return; // ナレーションはオーバーレイのクリックで進む
   if (dialogState.active) { advanceDialog(); return; }
   if (player.dead) return;
-  if (!pointerLocked && !IS_TOUCH) {
+  if (!pointerLocked && !IS_TOUCH && !lockBlocked) {
     renderer.domElement.requestPointerLock?.();
+    return;
+  }
+  if (!pointerLocked && !IS_TOUCH && lockBlocked) {
+    // ドラッグ視点モード:離したときに攻撃するか判定する
+    if (e.button === 0) dragLook = { x: e.clientX, y: e.clientY, moved: 0, t: performance.now() };
+    if (e.button === 2) tryRoll();
     return;
   }
   if (e.button === 0) tryAttack();
