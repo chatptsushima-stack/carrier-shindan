@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>風ノ残響 — Echoes of the Wind</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🍃</text></svg>">
 <style>
@@ -77,6 +77,21 @@ canvas{display:block}
 #objective .dist{font-size:12px;color:#b8ab8c;margin-top:4px;display:flex;justify-content:flex-end;align-items:center;gap:6px}
 #objective .dist .arrow{display:inline-block;transition:transform .15s linear;color:var(--gold)}
 
+#sidequest{
+  position:absolute;top:112px;right:30px;max-width:320px;text-align:right;
+  color:rgba(233,228,216,.82);text-shadow:0 1px 4px rgba(0,0,0,.85);
+  transition:opacity .4s;display:none;
+}
+#sidequest.show{display:block}
+#sidequest .label{font-size:10px;color:#8fd8c0;letter-spacing:.3em;margin-bottom:3px}
+#sidequest .text{font-size:13px;letter-spacing:.06em;line-height:1.7}
+
+#weapon{
+  position:absolute;top:76px;left:28px;color:var(--ink);font-size:12px;letter-spacing:.16em;
+  text-shadow:0 1px 4px rgba(0,0,0,.9);transition:opacity .4s;
+}
+#weapon .mark{color:var(--gold);margin-right:6px}
+
 #prompt{
   position:absolute;left:50%;top:58%;transform:translateX(-50%);
   color:#fff;background:rgba(10,14,12,.62);border:1px solid rgba(232,200,122,.45);
@@ -145,12 +160,66 @@ canvas{display:block}
   font-size:11px;letter-spacing:.12em;line-height:1.9;text-shadow:0 1px 3px #000;
   transition:opacity .4s;
 }
-#hud.incutscene #controls,#hud.incutscene #objective,#hud.incutscene #hearts,#hud.incutscene #stamina{opacity:0}
+#hud.incutscene #controls,#hud.incutscene #objective,#hud.incutscene #hearts,
+#hud.incutscene #stamina,#hud.incutscene #sidequest,#hud.incutscene #weapon{opacity:0}
 #controls b{color:rgba(232,200,122,.8);font-weight:600}
 
 #loading{position:fixed;inset:0;z-index:60;background:#000;display:flex;align-items:center;justify-content:center;
   color:#8d8470;letter-spacing:.4em;font-size:14px;transition:opacity .8s}
 #loading.hidden{opacity:0;pointer-events:none}
+
+/* ===== タッチ操作 ===== */
+#touch{position:fixed;inset:0;z-index:12;display:none;touch-action:none}
+#touch.show{display:block}
+
+/* タッチ端末ではキーボード用ガイドを隠し、HUDを安全領域に収める */
+body.is-touch #controls{display:none}
+body.is-touch #hearts{top:calc(14px + env(safe-area-inset-top));left:calc(16px + env(safe-area-inset-left));gap:3px}
+body.is-touch .heart{width:19px;height:19px}
+body.is-touch #stamina{top:calc(40px + env(safe-area-inset-top));left:calc(18px + env(safe-area-inset-left));width:96px;height:6px}
+body.is-touch #weapon{top:calc(54px + env(safe-area-inset-top));left:calc(18px + env(safe-area-inset-left));font-size:11px}
+body.is-touch #objective{top:calc(14px + env(safe-area-inset-top));right:calc(18px + env(safe-area-inset-right));max-width:min(300px,44vw)}
+body.is-touch #objective .text{font-size:13px}
+body.is-touch #sidequest{top:calc(84px + env(safe-area-inset-top));right:calc(18px + env(safe-area-inset-right));max-width:min(260px,40vw)}
+body.is-touch #sidequest .text{font-size:11px}
+body.is-touch #dialog{bottom:calc(14px + env(safe-area-inset-bottom));padding:14px 20px 20px;width:min(560px,64vw);left:34%}
+body.is-touch #dialog .body{font-size:14px;line-height:1.9;min-height:52px}
+body.is-touch #bossbar{bottom:calc(120px + env(safe-area-inset-bottom));width:min(420px,52vw);left:38%}
+body.is-touch #tbtns{right:calc(16px + env(safe-area-inset-right));bottom:calc(22px + env(safe-area-inset-bottom))}
+#lookZone{position:absolute;inset:0;touch-action:none}
+#stickZone{position:absolute;left:0;bottom:0;width:48%;height:62%;touch-action:none}
+#stickBase{
+  position:absolute;width:132px;height:132px;margin:-66px 0 0 -66px;border-radius:50%;
+  border:1.5px solid rgba(232,200,122,.4);background:rgba(10,14,12,.22);
+  opacity:0;transition:opacity .2s;pointer-events:none;
+}
+#stickBase.show{opacity:1}
+#stickKnob{
+  position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;
+  background:rgba(232,200,122,.32);border:1px solid rgba(232,200,122,.6);
+}
+#tbtns{position:absolute;right:16px;bottom:22px;width:210px;height:210px;pointer-events:none}
+.tb{
+  position:absolute;border-radius:50%;color:var(--ink);font-family:inherit;
+  background:rgba(10,14,12,.42);border:1.5px solid rgba(232,200,122,.45);
+  display:flex;align-items:center;justify-content:center;pointer-events:auto;
+  -webkit-tap-highlight-color:transparent;user-select:none;transition:background .1s,transform .1s;
+}
+.tb:active,.tb.on{background:rgba(232,200,122,.34);transform:scale(.93)}
+.tb .lbl{font-size:22px;line-height:1}
+.tb .sub{position:absolute;bottom:6px;font-size:9px;letter-spacing:.1em;color:rgba(232,200,122,.75)}
+#tbAttack{right:4px;bottom:20px;width:86px;height:86px;border-color:rgba(232,200,122,.7)}
+#tbRoll{right:92px;bottom:56px;width:64px;height:64px}
+#tbJump{right:34px;bottom:112px;width:64px;height:64px}
+#tbInteract{right:106px;bottom:132px;width:60px;height:60px;border-color:rgba(140,220,200,.6)}
+#tbWeapon{right:8px;bottom:186px;width:52px;height:52px;border-color:rgba(180,180,190,.45)}
+@media(max-width:520px){
+  #tbtns{width:180px;height:190px;right:10px}
+  #tbAttack{width:74px;height:74px}
+  #tbRoll,#tbJump{width:56px;height:56px}
+  #tbInteract{width:52px;height:52px}
+  #controls{display:none}
+}
 </style>
 </head>
 <body>
@@ -163,13 +232,15 @@ canvas{display:block}
   <div id="stamina"><div id="staminaFill"></div></div>
   <div id="objective"><div class="label">— 目 標 —</div><div class="text"></div>
     <div class="dist"><span class="arrow">➤</span><span class="m"></span></div></div>
+  <div id="sidequest"><div class="label">— 依 頼 —</div><div class="text"></div></div>
+  <div id="weapon"><span class="mark">⚔</span><span class="wname">旅人の剣</span></div>
   <div id="prompt"><b>E</b><span></span></div>
   <div id="bossbar"><div class="name"></div><div class="bar"><div class="fill"></div></div></div>
   <div id="dialog"><div class="name"></div><div class="body"></div><div class="next">▼ クリックで次へ</div></div>
   <div id="notice"></div>
   <div id="controls">
     <b>WASD</b> 移動　<b>マウス</b> 視点　<b>Shift</b> ダッシュ　<b>Space</b> ジャンプ<br>
-    <b>左クリック</b> 攻撃　<b>右クリック/C</b> 回避　<b>E</b> 調べる / 話す
+    <b>左クリック</b> 攻撃　<b>右クリック/C</b> 回避　<b>E</b> 調べる / 話す　<b>Q/1-3</b> 武器切替
   </div>
 </div>
 
@@ -184,6 +255,18 @@ canvas{display:block}
   <button id="startBtn">旅 を 始 め る</button>
   <button id="contBtn" style="display:none">続 き か ら</button>
   <div class="hint">推奨：PC・マウス操作／クリックで視点操作が始まります</div>
+</div>
+
+<div id="touch">
+  <div id="lookZone"></div>
+  <div id="stickZone"><div id="stickBase"><div id="stickKnob"></div></div></div>
+  <div id="tbtns">
+    <button class="tb" id="tbAttack"><span class="lbl">⚔</span><span class="sub">攻撃</span></button>
+    <button class="tb" id="tbRoll"><span class="lbl">◠</span><span class="sub">回避</span></button>
+    <button class="tb" id="tbJump"><span class="lbl">⤴</span><span class="sub">跳</span></button>
+    <button class="tb" id="tbInteract"><span class="lbl">◉</span><span class="sub">調べる</span></button>
+    <button class="tb" id="tbWeapon"><span class="lbl">⇄</span><span class="sub">武器</span></button>
+  </div>
 </div>
 
 <div id="loading">世界を紡いでいます…</div>

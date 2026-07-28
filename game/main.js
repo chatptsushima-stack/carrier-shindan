@@ -52,6 +52,7 @@ function fbm(x, y, oct = 5) {
 // ------------------------------------------------------------
 // 地形高さ関数(全システム共通)
 // ------------------------------------------------------------
+const SUMMIT_X = 296, SUMMIT_Z = -236;   // 風見の頂(独立峰)
 function terrainHeight(x, z) {
   let h = (fbm(x * 0.004 + 13.7, z * 0.004 + 7.1) - 0.42) * 78;
   h += (fbm(x * 0.018 + 3.3, z * 0.018 + 9.9) - 0.5) * 9;
@@ -59,6 +60,9 @@ function terrainHeight(x, z) {
   const dSpawn = Math.hypot(x - SPAWN.x, z - SPAWN.z);
   const flat = smoothstep(220, 50, dSpawn);
   h = lerp(h, 1.6 + (fbm(x * 0.03, z * 0.03) - 0.5) * 3.5, flat * 0.92);
+  // 東の独立峰「風見の頂」:遠くからでもそれと分かる目印
+  const dSummit2 = (x - SUMMIT_X) ** 2 + (z - SUMMIT_Z) ** 2;
+  h += 64 * Math.exp(-dSummit2 / (2 * 72 * 72));
   // 外周の山脈
   const dC = Math.hypot(x, z);
   h += smoothstep(WORLD_EDGE - 60, WORLD / 2, dC) * 90;
@@ -74,11 +78,16 @@ function terrainNormal(x, z, out) {
 // ------------------------------------------------------------
 // レンダラ / シーン
 // ------------------------------------------------------------
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// モバイル(タッチ端末)や ?perf=low 指定では最初から軽量設定で始める
+const PERF_PARAM = new URLSearchParams(location.search).get('perf');
+const IS_COARSE = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+const LOW_SPEC = PERF_PARAM === 'low' || (PERF_PARAM !== 'high' && IS_COARSE);
+
+const renderer = new THREE.WebGLRenderer({ antialias: !LOW_SPEC });
 renderer.setSize(innerWidth, innerHeight);
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, LOW_SPEC ? 1.5 : 2));
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = LOW_SPEC ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 document.getElementById('app').appendChild(renderer.domElement);
@@ -92,6 +101,7 @@ const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.1, 24
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.32, 0.7, 0.82);
+bloomPass.enabled = !LOW_SPEC;
 composer.addPass(bloomPass);
 composer.addPass(new OutputPass());
 
@@ -107,7 +117,7 @@ addEventListener('resize', () => {
 // ------------------------------------------------------------
 const sun = new THREE.DirectionalLight(0xffeecb, 2.6);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(LOW_SPEC ? 1024 : 2048, LOW_SPEC ? 1024 : 2048);
 sun.shadow.camera.left = -70; sun.shadow.camera.right = 70;
 sun.shadow.camera.top = 70; sun.shadow.camera.bottom = -70;
 sun.shadow.camera.near = 10; sun.shadow.camera.far = 380;
@@ -300,8 +310,8 @@ const colorTex = (() => {
 // ------------------------------------------------------------
 // 草原(インスタンシング + 頂点シェーダーで無限ラップ)
 // ------------------------------------------------------------
-const GRASS_COUNT = 52000;
-const GRASS_TILE = 190;
+const GRASS_COUNT = LOW_SPEC ? 20000 : 52000;
+const GRASS_TILE = LOW_SPEC ? 150 : 190;
 const grassUniforms = {
   uTime: { value: 0 },
   uCenter: { value: new THREE.Vector2() },
@@ -372,6 +382,7 @@ function buildGrass() {
         float scale = (0.7 + aRand.z*0.75);
         scale *= 1.0 - smoothstep(uTile*0.36, uTile*0.5, dist);  // 距離フェード
         scale *= step(${(WATER_LEVEL + 0.4).toFixed(2)}, h);       // 水中は非表示
+        scale *= 1.0 - smoothstep(44.0, 60.0, h);                 // 雪線より上には生えない
 
         // 向きランダム回転
         float ang = aRand.x * 6.2831;
@@ -650,6 +661,11 @@ const LOC = {
   shrineB: new THREE.Vector3(170, 0, -160),   // 湖畔の祠
   shrineC: new THREE.Vector3(-60, 0, 210),    // 丘の祠
   altar: new THREE.Vector3(-200, 0, -320),    // 北西の祭壇(ボス)
+  toki: new THREE.Vector3(-62, 0, 60),        // 狩人トキの野営
+  summit: new THREE.Vector3(SUMMIT_X, 0, SUMMIT_Z),  // 東の高峰(風見の頂)
+  chime1: new THREE.Vector3(-210, 0, 140),
+  chime2: new THREE.Vector3(240, 0, 60),
+  chime3: new THREE.Vector3(-120, 0, -230),
 };
 for (const k in LOC) LOC[k].y = terrainHeight(LOC[k].x, LOC[k].z);
 
@@ -684,11 +700,18 @@ function makeBeam(color = 0x7fd8c8) {
   return m;
 }
 const beams = { camp: makeBeam(0xe8c87a), A: makeBeam(), B: makeBeam(), C: makeBeam(), altar: makeBeam(0xd84a3a) };
+// サイドクエスト用(細く控えめな光)
+const sideBeams = {
+  chime1: makeBeam(0xffd88a), chime2: makeBeam(0xffd88a), chime3: makeBeam(0xffd88a),
+  summit: makeBeam(0xaac8e8),
+};
+for (const b of Object.values(sideBeams)) b.scale.set(0.45, 1, 0.45);
 beams.camp.position.copy(LOC.camp).y += 110;
 beams.A.position.copy(LOC.shrineA).y += 110;
 beams.B.position.copy(LOC.shrineB).y += 110;
 beams.C.position.copy(LOC.shrineC).y += 110;
 beams.altar.position.copy(LOC.altar).y += 110;
+for (const k of ['chime1', 'chime2', 'chime3', 'summit']) sideBeams[k].position.copy(LOC[k]).y += 110;
 
 // ------------------------------------------------------------
 // 記憶の欠片(クリスタル)
@@ -748,23 +771,67 @@ function buildHero() {
   const legR = mkLimb(pants, 0.5, 0.11); legR.position.set(0.16, 0.72, 0);
   g.add(armL, armR, legL, legR);
 
-  // 剣(右手)
+  // 武器(右手のマウントに3種を仕込み、可視を切り替える)
+  const mount = new THREE.Group();
+  mount.position.y = -0.95;
+  mount.rotation.x = Math.PI;
+  armR.add(mount);
+
+  const steel = new THREE.MeshStandardMaterial({ color: 0xcfd6dd, metalness: 0.85, roughness: 0.25 });
+  const brass = new THREE.MeshStandardMaterial({ color: 0xa8862e, metalness: 0.6, roughness: 0.4 });
+  const leather = new THREE.MeshStandardMaterial({ color: 0x3a2e20, roughness: 1 });
+  const wood = new THREE.MeshStandardMaterial({ color: 0x6b4a2e, roughness: 1 });
+  const oldSteel = new THREE.MeshStandardMaterial({
+    color: 0x9aa2a8, metalness: 0.7, roughness: 0.5,
+    emissive: 0x2a3038, emissiveIntensity: 0.5,
+  });
+
+  // 旅人の剣
   const sword = new THREE.Group();
-  const bladeM = new THREE.Mesh(
-    new THREE.BoxGeometry(0.06, 1.0, 0.16),
-    new THREE.MeshStandardMaterial({ color: 0xcfd6dd, metalness: 0.85, roughness: 0.25 })
-  );
-  bladeM.position.y = -0.75;
-  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.06, 0.1),
-    new THREE.MeshStandardMaterial({ color: 0xa8862e, metalness: 0.6, roughness: 0.4 }));
-  guard.position.y = -0.22;
-  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.22, 6),
-    new THREE.MeshStandardMaterial({ color: 0x3a2e20 }));
-  grip.position.y = -0.1;
-  sword.add(bladeM, guard, grip);
-  sword.position.y = -0.95;
-  sword.rotation.x = Math.PI;
-  armR.add(sword);
+  {
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.0, 0.16), steel);
+    blade.position.y = -0.75;
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.06, 0.1), brass);
+    guard.position.y = -0.22;
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.22, 6), leather);
+    grip.position.y = -0.1;
+    sword.add(blade, guard, grip);
+  }
+
+  // 風薙の槍(長い柄 + 穂先)
+  const spear = new THREE.Group();
+  {
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 2.5, 7), wood);
+    shaft.position.y = -0.85;
+    const head = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.5, 7), steel);
+    head.position.y = -2.3;
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.1, 7), brass);
+    collar.position.y = -2.03;
+    const tail = new THREE.Mesh(new THREE.SphereGeometry(0.06, 7, 6), brass);
+    tail.position.y = 0.4;
+    spear.add(shaft, head, collar, tail);
+    spear.visible = false;
+  }
+
+  // 古の大剣(幅広・重い)
+  const great = new THREE.Group();
+  {
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.11, 1.55, 0.3), oldSteel);
+    blade.position.y = -1.05;
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.34, 4), oldSteel);
+    tip.position.y = -1.96;
+    tip.rotation.y = Math.PI / 4;
+    tip.scale.z = 0.55;
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.09, 0.14), brass);
+    guard.position.y = -0.26;
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.34, 6), leather);
+    grip.position.y = -0.06;
+    const pommel = new THREE.Mesh(new THREE.OctahedronGeometry(0.09, 0), brass);
+    pommel.position.y = 0.14;
+    great.add(blade, tip, guard, grip, pommel);
+    great.visible = false;
+  }
+  mount.add(sword, spear, great);
 
   // 背中の盾っぽい装備
   const pack = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.5, 0.14),
@@ -774,7 +841,7 @@ function buildHero() {
   g.add(pack);
 
   g.traverse(o => { if (o.isMesh) o.castShadow = true; });
-  return { group: g, armL, armR, legL, legR, head, sword };
+  return { group: g, armL, armR, legL, legR, head, sword, weapons: { sword, spear, great } };
 }
 const hero = buildHero();
 hero.group.rotation.order = 'YXZ';   // ロール回転(X)をヨー(Y)の後に適用
@@ -951,22 +1018,108 @@ function buildBossModel() {
   return { group: g, legs, head };
 }
 
+function buildWispModel() {
+  const g = new THREE.Group();
+  const core = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.34, 1),
+    new THREE.MeshStandardMaterial({
+      color: 0xffb45a, emissive: 0xff7a20, emissiveIntensity: 2.2, roughness: 0.4,
+    })
+  );
+  core.position.y = 1.5;
+  g.add(core);
+  const halo = new THREE.Mesh(
+    new THREE.SphereGeometry(0.62, 12, 10),
+    new THREE.MeshBasicMaterial({
+      color: 0xff9a3a, transparent: true, opacity: 0.22,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    })
+  );
+  halo.position.y = 1.5;
+  g.add(halo);
+  const light = new THREE.PointLight(0xff8a30, 7, 14);
+  light.position.y = 1.5;
+  g.add(light);
+  return { group: g, core, halo };
+}
+
+function buildChargerModel() {
+  const g = new THREE.Group();
+  const hide = new THREE.MeshStandardMaterial({ color: 0x5a4638, roughness: 1 });
+  const rock = new THREE.MeshStandardMaterial({ color: 0x7d776b, roughness: 1 });
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.62, 0.9, 4, 10), hide);
+  body.rotation.z = Math.PI / 2;
+  body.position.y = 1.0;
+  body.castShadow = true;
+  g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.44, 12, 10), hide);
+  head.position.set(0, 0.92, 1.05);
+  head.scale.z = 1.25;
+  head.castShadow = true;
+  g.add(head);
+  // 背の岩甲
+  for (let i = 0; i < 4; i++) {
+    const plate = new THREE.Mesh(new THREE.DodecahedronGeometry(0.26, 0), rock);
+    plate.position.set(rand(0.2, -0.2), 1.5 - i * 0.06, 0.55 - i * 0.42);
+    plate.rotation.set(rand(1), rand(1), rand(1));
+    plate.castShadow = true;
+    g.add(plate);
+  }
+  // 牙
+  const tuskMat = new THREE.MeshStandardMaterial({ color: 0xd8cfb4, roughness: 0.5 });
+  for (const sgn of [-1, 1]) {
+    const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.44, 6), tuskMat);
+    tusk.position.set(0.24 * sgn, 0.82, 1.36);
+    tusk.rotation.set(-1.1, 0, 0.3 * sgn);
+    g.add(tusk);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffcc44 }));
+    eye.position.set(0.26 * sgn, 1.12, 1.25);
+    g.add(eye);
+  }
+  const legs = [];
+  for (const [sx, sz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) {
+    const leg = new THREE.Group();
+    const l = new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 0.5, 3, 7), hide);
+    l.position.y = -0.35;
+    l.castShadow = true;
+    leg.add(l);
+    leg.position.set(0.4 * sx, 0.72, 0.5 * sz);
+    g.add(leg);
+    legs.push(leg);
+  }
+  return { group: g, legs, head };
+}
+
+// 敵の性能表
+const ENEMY_STATS = {
+  slime:   { hp: 2,  speed: 3.4, dmg: 1, aggro: 26, radius: 0.8, cd: 1.2 },
+  shade:   { hp: 5,  speed: 4.4, dmg: 2, aggro: 26, radius: 0.8, cd: 1.2 },
+  wisp:    { hp: 3,  speed: 3.0, dmg: 2, aggro: 30, radius: 0.7, cd: 2.2 },
+  charger: { hp: 8,  speed: 3.6, dmg: 3, aggro: 32, radius: 1.2, cd: 2.6 },
+  boss:    { hp: 36, speed: 7.5, dmg: 3, aggro: 90, radius: 2.6, cd: 1.4 },
+};
+const ENEMY_NAMES = { slime: '草の粘塊', shade: '影の魔物', wisp: '迷イ火', charger: '岩背獣', boss: '影ノ獣' };
+const ENEMY_COLOR = { slime: 0x9ad84a, shade: 0x8a2aff, wisp: 0xff8a30, charger: 0xc8a878, boss: 0xb86aff };
+
 function spawnEnemy(type, x, z) {
-  const model = type === 'slime' ? buildSlimeModel() : type === 'shade' ? buildShadeModel() : buildBossModel();
+  const model = type === 'slime' ? buildSlimeModel()
+    : type === 'shade' ? buildShadeModel()
+    : type === 'wisp' ? buildWispModel()
+    : type === 'charger' ? buildChargerModel()
+    : buildBossModel();
+  const st = ENEMY_STATS[type];
   const e = {
     type, model,
     pos: new THREE.Vector3(x, terrainHeight(x, z), z),
     home: new THREE.Vector3(x, 0, z),
     vel: V3(),
-    hp: type === 'slime' ? 2 : type === 'shade' ? 5 : 36,
-    maxHp: type === 'slime' ? 2 : type === 'shade' ? 5 : 36,
+    hp: st.hp, maxHp: st.hp,
     state: 'idle', t: rand(3),
     attackCd: 0, hurtT: 0, dead: false, deathT: 0,
     yaw: rand(Math.PI * 2),
-    aggro: type === 'boss' ? 90 : 26,
-    speed: type === 'slime' ? 3.4 : type === 'shade' ? 4.4 : 7.5,
-    dmg: type === 'slime' ? 1 : type === 'shade' ? 2 : 3,
-    radius: type === 'boss' ? 2.6 : 0.8,
+    aggro: st.aggro, speed: st.speed, dmg: st.dmg, radius: st.radius, cd: st.cd,
+    windT: 0, chargeT: 0, chargeDir: V3(),
   };
   e.model.group.position.copy(e.pos);
   scene.add(e.model.group);
@@ -982,21 +1135,85 @@ function populateEnemies() {
       spawnEnemy(type, loc.x + Math.cos(a) * d, loc.z + Math.sin(a) * d);
     }
   };
+  // 森の祠:粘塊と影、木立に潜む迷イ火
   guard(LOC.shrineA, 3, 'slime');
   guard(LOC.shrineA, 1, 'shade');
+  guard(LOC.shrineA, 1, 'wisp');
+  // 湖畔の祠:遠距離の迷イ火が多い
   guard(LOC.shrineB, 2, 'slime');
   guard(LOC.shrineB, 2, 'shade');
-  guard(LOC.shrineC, 3, 'slime');
+  guard(LOC.shrineB, 2, 'wisp');
+  // 丘の祠:岩背獣の縄張り
+  guard(LOC.shrineC, 2, 'slime');
   guard(LOC.shrineC, 1, 'shade');
-  // 草原に少し
+  guard(LOC.shrineC, 2, 'charger');
+  // 草原に点在
   for (let i = 0; i < 8; i++) {
     const a = rand(Math.PI * 2), d = rand(200, 80);
     const x = SPAWN.x + Math.cos(a) * d, z = SPAWN.z + Math.sin(a) * d;
     if (terrainHeight(x, z) < WATER_LEVEL + 1) continue;
     spawnEnemy('slime', x, z);
   }
+  // 荒野の岩背獣(討伐依頼の対象)
+  for (let i = 0; i < 6; i++) {
+    const a = rand(Math.PI * 2), d = rand(250, 120);
+    const x = SPAWN.x + Math.cos(a) * d, z = SPAWN.z + Math.sin(a) * d;
+    if (terrainHeight(x, z) < WATER_LEVEL + 2) continue;
+    spawnEnemy('charger', x, z);
+  }
+  // 夜の湿地を漂う迷イ火
+  for (let i = 0; i < 5; i++) {
+    const a = rand(Math.PI * 2), d = rand(230, 100);
+    const x = SPAWN.x + Math.cos(a) * d, z = SPAWN.z + Math.sin(a) * d;
+    if (terrainHeight(x, z) < WATER_LEVEL + 1) continue;
+    spawnEnemy('wisp', x, z);
+  }
 }
 populateEnemies();
+
+// ------------------------------------------------------------
+// 投射物(迷イ火の火の玉)
+// ------------------------------------------------------------
+const projectiles = [];
+const projCoreGeo = new THREE.SphereGeometry(0.14, 8, 7);
+const projGlowGeo = new THREE.SphereGeometry(0.4, 10, 8);
+const projCoreMat = new THREE.MeshBasicMaterial({ color: 0xffeec4 });
+const projGlowMat = new THREE.MeshBasicMaterial({
+  color: 0xff8a30, transparent: true, opacity: 0.4,
+  blending: THREE.AdditiveBlending, depthWrite: false,
+});
+function spawnProjectile(from, dir, speed, dmg) {
+  const mesh = new THREE.Mesh(projCoreGeo, projCoreMat);
+  const glow = new THREE.Mesh(projGlowGeo, projGlowMat);
+  mesh.add(glow);
+  mesh.position.copy(from);
+  mesh.add(new THREE.PointLight(0xff8a30, 6, 9));
+  scene.add(mesh);
+  projectiles.push({ mesh, glow, vel: dir.clone().multiplyScalar(speed), dmg, life: 4, trail: 0 });
+}
+function updateProjectiles(dt) {
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const p = projectiles[i];
+    p.life -= dt;
+    p.mesh.position.addScaledVector(p.vel, dt);
+    p.vel.y -= 2.2 * dt;
+    // 尾を引かせる
+    p.glow.scale.setScalar(0.85 + Math.sin(p.life * 30) * 0.15);
+    p.trail -= dt;
+    if (p.trail <= 0) { p.trail = 0.06; spawnParticles(p.mesh.position, 1, 0xff9a3a, 0.6, 0.35, 0.4); }
+    let gone = p.life <= 0;
+    if (!gone && p.mesh.position.distanceTo(player.pos) < 1.5 && player.pos.y + 2.2 > p.mesh.position.y) {
+      damagePlayer(p.dmg, p.mesh.position);
+      spawnParticles(p.mesh.position, 12, 0xff8a30, 4, 0.5, 2);
+      gone = true;
+    }
+    if (!gone && p.mesh.position.y < terrainHeight(p.mesh.position.x, p.mesh.position.z)) {
+      spawnParticles(p.mesh.position, 8, 0xff8a30, 3, 0.4, 2);
+      gone = true;
+    }
+    if (gone) { scene.remove(p.mesh); projectiles.splice(i, 1); }
+  }
+}
 
 // ------------------------------------------------------------
 // 回復ハート(ドロップ)
@@ -1182,7 +1399,7 @@ const audio = {
     src.connect(bp).connect(g).connect(this.master);
     src.start(t);
   },
-  sword() { this.noiseBurst(0.16, 2400, 0.12, 0.25); },
+  sword(pitch = 1) { this.noiseBurst(0.16 / pitch, 2400 * pitch, 0.12, 0.25); },
   hit() {
     this.noiseBurst(0.1, 900, 0.16, 0.5);
     this.blip(120, 0.12, 0.12, 'square');
@@ -1226,6 +1443,139 @@ document.addEventListener('pointerlockchange', () => {
 });
 
 const cam = { yaw: Math.PI, pitch: 0.32, dist: 6.8 };
+
+// ------------------------------------------------------------
+// タッチ操作(仮想スティック + 視点ドラッグ + アクションボタン)
+// ------------------------------------------------------------
+const IS_TOUCH = matchMedia('(pointer: coarse)').matches
+  || navigator.maxTouchPoints > 0
+  || new URLSearchParams(location.search).has('touch');
+
+const touch = {
+  stick: { id: null, ox: 0, oy: 0, x: 0, z: 0, mag: 0 },
+  look: { id: null, lx: 0, ly: 0 },
+  pinch: null,
+};
+function readMoveInput() {
+  let ix = 0, iz = 0;
+  if (keys['KeyW']) iz -= 1;
+  if (keys['KeyS']) iz += 1;
+  if (keys['KeyA']) ix -= 1;
+  if (keys['KeyD']) ix += 1;
+  if (touch.stick.mag > 0) { ix += touch.stick.x; iz += touch.stick.z; }
+  return { ix, iz };
+}
+
+function showTouchUI() {
+  if (IS_TOUCH) document.getElementById('touch').classList.add('show');
+}
+function setupTouch() {
+  const layer = document.getElementById('touch');
+  const stickZone = document.getElementById('stickZone');
+  const lookZone = document.getElementById('lookZone');
+  const base = document.getElementById('stickBase');
+  const knob = document.getElementById('stickKnob');
+  const STICK_R = 58;
+  document.body.classList.add('is-touch');
+  cam.dist = 8.2;                      // 小さい画面では少し引く
+  // タイトル画面では邪魔になるので、旅を始めてから表示する
+  layer.classList.remove('show');
+
+  // --- 仮想スティック(触れた場所に出現) ---
+  const stickSet = (t) => {
+    const dx = t.clientX - touch.stick.ox;
+    const dy = t.clientY - touch.stick.oy;
+    const d = Math.hypot(dx, dy);
+    const k = d > STICK_R ? STICK_R / d : 1;
+    knob.style.transform = `translate(${dx * k}px, ${dy * k}px)`;
+    const mag = Math.min(1, d / STICK_R);
+    touch.stick.mag = mag < 0.12 ? 0 : mag;
+    if (touch.stick.mag === 0) { touch.stick.x = touch.stick.z = 0; return; }
+    touch.stick.x = (dx / Math.max(d, 1)) * mag;
+    touch.stick.z = (dy / Math.max(d, 1)) * mag;
+  };
+  stickZone.addEventListener('touchstart', e => {
+    if (touch.stick.id !== null) return;
+    const t = e.changedTouches[0];
+    touch.stick.id = t.identifier;
+    touch.stick.ox = t.clientX; touch.stick.oy = t.clientY;
+    base.style.left = `${t.clientX}px`;
+    base.style.top = `${t.clientY - stickZone.getBoundingClientRect().top}px`;
+    base.classList.add('show');
+    knob.style.transform = 'translate(0,0)';
+    e.preventDefault();
+  }, { passive: false });
+  const stickEnd = () => {
+    touch.stick.id = null;
+    touch.stick.mag = touch.stick.x = touch.stick.z = 0;
+    base.classList.remove('show');
+  };
+
+  // --- 視点ドラッグ(右側 or スティック以外) ---
+  lookZone.addEventListener('touchstart', e => {
+    // 会話・ナレーション中はタップで送る
+    if (dialogState.active) { advanceDialog(); e.preventDefault(); return; }
+    if (narrationState.active) { if (narrationState.ready) nextNarration(); e.preventDefault(); return; }
+    if (touch.look.id !== null) return;
+    const t = e.changedTouches[0];
+    touch.look.id = t.identifier;
+    touch.look.lx = t.clientX; touch.look.ly = t.clientY;
+    e.preventDefault();
+  }, { passive: false });
+
+  addEventListener('touchmove', e => {
+    for (const t of e.changedTouches) {
+      if (t.identifier === touch.stick.id) stickSet(t);
+      else if (t.identifier === touch.look.id) {
+        cam.yaw -= (t.clientX - touch.look.lx) * 0.006;
+        cam.pitch = clamp(cam.pitch + (t.clientY - touch.look.ly) * 0.005, -0.5, 1.25);
+        touch.look.lx = t.clientX; touch.look.ly = t.clientY;
+      }
+    }
+    if (e.cancelable) e.preventDefault();
+  }, { passive: false });
+
+  const endTouch = e => {
+    for (const t of e.changedTouches) {
+      if (t.identifier === touch.stick.id) stickEnd();
+      if (t.identifier === touch.look.id) touch.look.id = null;
+    }
+  };
+  addEventListener('touchend', endTouch);
+  addEventListener('touchcancel', endTouch);
+
+  // --- アクションボタン ---
+  const bind = (id, onDown, onUp) => {
+    const el = document.getElementById(id);
+    const down = e => {
+      e.preventDefault(); e.stopPropagation();
+      el.classList.add('on');
+      audioResume();
+      onDown();
+    };
+    const up = e => {
+      e.preventDefault(); e.stopPropagation();
+      el.classList.remove('on');
+      if (onUp) onUp();
+    };
+    el.addEventListener('touchstart', down, { passive: false });
+    el.addEventListener('touchend', up);
+    el.addEventListener('touchcancel', up);
+    el.addEventListener('mousedown', down);
+    el.addEventListener('mouseup', up);
+  };
+  bind('tbAttack', () => tryAttack());
+  bind('tbRoll', () => tryRoll());
+  bind('tbJump', () => { keys['Space'] = true; }, () => { keys['Space'] = false; });
+  bind('tbInteract', () => tryInteract());
+  bind('tbWeapon', () => cycleWeapon());
+}
+function audioResume() { if (audio.ctx && audio.ctx.state === 'suspended') audio.ctx.resume(); }
+if (IS_TOUCH) {
+  setupTouch();
+  const hint = document.querySelector('#title .hint');
+  if (hint) hint.innerHTML = '左半分をなぞって移動／右側をドラッグで視点<br>右下のボタンで攻撃・回避・調べる';
+}
 addEventListener('mousemove', e => {
   if (!pointerLocked) return;
   cam.yaw -= e.movementX * 0.0024;
@@ -1250,6 +1600,10 @@ const ui = {
   dialogName: document.querySelector('#dialog .name'),
   dialogBody: document.querySelector('#dialog .body'),
   notice: document.getElementById('notice'),
+  sidequest: document.getElementById('sidequest'),
+  sidequestText: document.querySelector('#sidequest .text'),
+  weaponName: document.querySelector('#weapon .wname'),
+  weaponMark: document.querySelector('#weapon .mark'),
   vignette: document.getElementById('vignette'),
   bossbar: document.getElementById('bossbar'),
   bossName: document.querySelector('#bossbar .name'),
@@ -1368,7 +1722,8 @@ const player = {
   hp: 10, maxHp: 10,
   stamina: 100, staminaRegenDelay: 0, exhausted: false,
   onGround: true,
-  attackT: 0, attackCombo: 0,
+  attackT: 0, attackDur: 0.42, attackCombo: 0, hitT: -1,
+  weapon: 'sword', weapons: { sword: true, spear: false, great: false },
   rollT: 0, rollDir: new THREE.Vector3(),
   invulnT: 0,
   speedSmooth: 0,
@@ -1532,6 +1887,312 @@ addInteract(LOC.camp, 3.5, '話す', () => {
   }
 }, () => !dialogState.active);
 
+// ============================================================
+//  サイドクエスト:狩人トキの依頼
+// ============================================================
+game.side = {
+  hunt: 'none', huntKills: 0,           // 岩背獣 討伐
+  chimes: 'none', chimeFound: {},       // 風鈴 収集
+  summit: 'none',                       // 風見の頂
+};
+const HUNT_TARGET = 3;
+const CHIME_TARGET = 3;
+
+// ---- 狩人トキ ----
+function buildToki() {
+  const g = new THREE.Group();
+  const cloak = new THREE.MeshStandardMaterial({ color: 0x3f5a3a, roughness: 1 });
+  const skin = new THREE.MeshStandardMaterial({ color: 0xdcb289, roughness: 1 });
+  const hair = new THREE.MeshStandardMaterial({ color: 0x2e2620, roughness: 1 });
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.3, 0.62, 4, 10), cloak);
+  body.position.y = 1.02; body.castShadow = true; g.add(body);
+  const hood = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.42, 9), cloak);
+  hood.position.y = 1.72; hood.castShadow = true; g.add(hood);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 10), skin);
+  head.position.set(0, 1.62, 0.06); g.add(head);
+  const braid = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.4, 3, 7), hair);
+  braid.position.set(0, 1.4, -0.24); braid.rotation.x = 0.35; g.add(braid);
+  // 弓
+  const bow = new THREE.Mesh(
+    new THREE.TorusGeometry(0.52, 0.035, 6, 14, Math.PI * 1.15),
+    new THREE.MeshStandardMaterial({ color: 0x6b4a2e, roughness: 1 })
+  );
+  bow.position.set(-0.42, 1.05, -0.06);
+  bow.rotation.set(0, Math.PI / 2, Math.PI / 2 - 0.2);
+  bow.castShadow = true;
+  g.add(bow);
+  // 矢筒
+  const quiver = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.11, 0.5, 8),
+    new THREE.MeshStandardMaterial({ color: 0x5a4028, roughness: 1 }));
+  quiver.position.set(0.2, 1.24, -0.26);
+  quiver.rotation.x = 0.4;
+  g.add(quiver);
+  g.position.copy(LOC.toki);
+  scene.add(g);
+  return g;
+}
+const toki = buildToki();
+
+// ---- 風鈴(世界に散らばる3つ) ----
+function buildChime(loc, key) {
+  const g = new THREE.Group();
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 2.3, 7),
+    new THREE.MeshStandardMaterial({ color: 0x6b4a2e, roughness: 1 }));
+  post.position.y = 1.15; post.castShadow = true; g.add(post);
+  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.7, 6),
+    new THREE.MeshStandardMaterial({ color: 0x6b4a2e, roughness: 1 }));
+  arm.rotation.z = Math.PI / 2;
+  arm.position.set(0.3, 2.24, 0); g.add(arm);
+  const bell = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10, 0, Math.PI * 2, 0, Math.PI * 0.62),
+    new THREE.MeshStandardMaterial({
+      color: 0xdcc07a, metalness: 0.75, roughness: 0.3,
+      emissive: 0x8a6a20, emissiveIntensity: 0.5, side: THREE.DoubleSide,
+    }));
+  bell.position.set(0.6, 2.1, 0); bell.castShadow = true; g.add(bell);
+  const paper = new THREE.Mesh(new THREE.PlaneGeometry(0.14, 0.42),
+    new THREE.MeshStandardMaterial({ color: 0xe8e2d0, side: THREE.DoubleSide, roughness: 1 }));
+  paper.position.set(0.6, 1.76, 0); g.add(paper);
+  const light = new THREE.PointLight(0xffd88a, 3, 9);
+  light.position.set(0.6, 2.1, 0); g.add(light);
+  g.position.copy(loc);
+  g.position.y = terrainHeight(loc.x, loc.z);
+  scene.add(g);
+  return { group: g, bell, paper, key };
+}
+const chimes = {
+  1: buildChime(LOC.chime1, 1),
+  2: buildChime(LOC.chime2, 2),
+  3: buildChime(LOC.chime3, 3),
+};
+function chimeCount() { return Object.values(game.side.chimeFound).filter(Boolean).length; }
+function collectChime(key) {
+  if (game.side.chimeFound[key]) return;
+  game.side.chimeFound[key] = true;
+  const c = chimes[key];
+  spawnParticles(c.group.position.clone().setY(c.group.position.y + 2.1), 24, 0xffd88a, 4, 1, 3);
+  scene.remove(c.group);
+  // 風鈴の澄んだ音
+  [1568, 2093, 2637].forEach((f, i) => setTimeout(() => audio.blip(f, 0.9, 0.045, 'sine'), i * 90));
+  const n = chimeCount();
+  if (game.side.chimes === 'active' && n >= CHIME_TARGET) {
+    game.side.chimes = 'ready';
+    showNotice('三つの風鈴が揃った\nトキのもとへ', 3.5);
+  } else {
+    showNotice(`風鈴を見つけた(${n} / ${CHIME_TARGET})`, 2.6);
+  }
+  refreshSideQuestUI();
+  saveGame();
+}
+for (const k of [1, 2, 3]) {
+  addInteract(LOC[`chime${k}`], 3.4, '風鈴を手に取る',
+    () => collectChime(k), () => !game.side.chimeFound[k] && !dialogState.active);
+}
+
+// ---- 風見の頂:石塚に刺さった大剣 ----
+const summitCairn = (() => {
+  const g = new THREE.Group();
+  const rockMat = new THREE.MeshStandardMaterial({ color: 0x8a8478, roughness: 1 });
+  const baseY = terrainHeight(LOC.summit.x, LOC.summit.z);
+  for (let i = 0; i < 7; i++) {
+    const r = new THREE.Mesh(new THREE.DodecahedronGeometry(rand(0.7, 0.35), 0), rockMat);
+    const a = (i / 7) * Math.PI * 2;
+    const ox = Math.cos(a) * rand(1.1, 0.4), oz = Math.sin(a) * rand(1.1, 0.4);
+    // 斜面でも浮かないよう、岩ごとに地面の高さを拾う
+    const dy = terrainHeight(LOC.summit.x + ox, LOC.summit.z + oz) - baseY;
+    r.position.set(ox, dy + 0.1 + i * 0.14, oz);
+    r.rotation.set(rand(3), rand(3), rand(3));
+    r.castShadow = r.receiveShadow = true;
+    g.add(r);
+  }
+  // 突き立った大剣
+  const sw = new THREE.Group();
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.13, 1.7, 0.34),
+    new THREE.MeshStandardMaterial({
+      color: 0x9aa2a8, metalness: 0.7, roughness: 0.5,
+      emissive: 0x2a3038, emissiveIntensity: 0.8,
+    }));
+  blade.position.y = 0.95;
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.1, 0.16),
+    new THREE.MeshStandardMaterial({ color: 0xa8862e, metalness: 0.6, roughness: 0.4 }));
+  guard.position.y = 1.84;
+  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.38, 6),
+    new THREE.MeshStandardMaterial({ color: 0x3a2e20, roughness: 1 }));
+  grip.position.y = 2.08;
+  sw.add(blade, guard, grip);
+  sw.rotation.z = 0.13;
+  sw.position.y = 0.75;
+  sw.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  g.add(sw);
+  const light = new THREE.PointLight(0xaac8e8, 5, 14);
+  light.position.y = 2.4;
+  g.add(light);
+  g.position.copy(LOC.summit);
+  g.position.y = terrainHeight(LOC.summit.x, LOC.summit.z);
+  scene.add(g);
+  return { group: g, sword: sw, light };
+})();
+// 頂の周りの露岩(規模感)
+{
+  const rockMat = new THREE.MeshStandardMaterial({ color: 0x8d8678, roughness: 1 });
+  const geo = new THREE.DodecahedronGeometry(1, 0);
+  const N = 22;
+  const mesh = new THREE.InstancedMesh(geo, rockMat, N);
+  mesh.castShadow = mesh.receiveShadow = true;
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = V3(), pv = V3();
+  for (let i = 0; i < N; i++) {
+    const a = rand(Math.PI * 2), d = rand(46, 8);
+    const x = LOC.summit.x + Math.cos(a) * d, z = LOC.summit.z + Math.sin(a) * d;
+    const s0 = rand(3.2, 0.8);
+    q.setFromEuler(new THREE.Euler(rand(Math.PI), rand(Math.PI), rand(Math.PI)));
+    m.compose(pv.set(x, terrainHeight(x, z) + s0 * 0.15, z), q, sc.set(s0, s0 * rand(1.1, 0.6), s0));
+    mesh.setMatrixAt(i, m);
+    if (s0 > 1.6) colliders.push({ x, z, r: s0 * 0.8 });
+  }
+  scene.add(mesh);
+}
+addInteract(LOC.summit, 4.2, '大剣を引き抜く', () => {
+  game.side.summit = 'done';
+  scene.remove(summitCairn.group);
+  spawnParticles(LOC.summit.clone().setY(terrainHeight(LOC.summit.x, LOC.summit.z) + 2), 45, 0xaac8e8, 6, 1.4, 3.5);
+  shake = 0.45;
+  grantWeapon('great');
+  startNarration([
+    '【風見の頂】\n\n石塚に突き立てられた大剣。\n刃は錆びていない――百年、この風に磨かれてきたのだ。',
+    '柄を握った瞬間、遠い斉唱が聴こえた気がした。\n名もなき騎士たちが、ここに眠っている。',
+  ], () => { refreshSideQuestUI(); saveGame(); });
+}, () => game.side.summit === 'active' && !dialogState.active);
+
+// ---- 討伐カウント ----
+function onEnemyKilled(e) {
+  if (game.side.hunt === 'active' && e.type === 'charger') {
+    game.side.huntKills++;
+    if (game.side.huntKills >= HUNT_TARGET) {
+      game.side.hunt = 'ready';
+      showNotice('岩背獣を退けた\nトキのもとへ', 3.2);
+    } else {
+      showNotice(`岩背獣 ${game.side.huntKills} / ${HUNT_TARGET}`, 2);
+    }
+    refreshSideQuestUI();
+    saveGame();
+  }
+}
+
+// ---- 依頼のUI ----
+function activeSideQuest() {
+  const sd = game.side;
+  if (sd.hunt === 'active') return `岩背獣を退ける(${sd.huntKills} / ${HUNT_TARGET})`;
+  if (sd.hunt === 'ready') return 'トキに岩背獣の件を報せる';
+  if (sd.chimes === 'active') return `風鈴を探す(${chimeCount()} / ${CHIME_TARGET})`;
+  if (sd.chimes === 'ready') return 'トキに風鈴のことを報せる';
+  if (sd.summit === 'active') return '東の高峰「風見の頂」に登る';
+  return null;
+}
+function refreshSideQuestUI() {
+  const t = activeSideQuest();
+  ui.sidequest.classList.toggle('show', !!t);
+  if (t) ui.sidequestText.textContent = t;
+  const showChimes = game.side.chimes === 'active';
+  for (const k of [1, 2, 3]) {
+    sideBeams[`chime${k}`].visible = showChimes && !game.side.chimeFound[k];
+  }
+  sideBeams.summit.visible = game.side.summit === 'active';
+}
+
+// ---- トキとの会話 ----
+const TOKI_FIRST = [
+  { name: '???', text: '……動くな。そこ、獣道だ。' },
+  { name: '狩人トキ', text: '……人か。驚いた、この草原で生きた人間に会うのは半年ぶりだ。私はトキ。獣を追って北から来た。' },
+  { name: '狩人トキ', text: 'ナギの爺さんのところに寄ったんだろう。なら話は早い。あんたが影を相手にするなら、こっちの厄介ごとも聞いてくれ。' },
+];
+function tokiDialog() {
+  const sd = game.side;
+  // --- 報告 ---
+  if (sd.hunt === 'ready') {
+    sd.hunt = 'done';
+    startDialog([
+      { name: '狩人トキ', text: '岩背獣を三頭……あんた、本当に人間か?' },
+      { name: '狩人トキ', text: '約束のものだ。持っていけ――「風薙の槍」。私の師の得物だった。' },
+      { name: '狩人トキ', text: '間合いが長い。突けば穂先が二度走る。影相手には、近づかれる前に決めるのが一番だ。' },
+    ], () => { grantWeapon('spear'); refreshSideQuestUI(); saveGame(); });
+    return;
+  }
+  if (sd.chimes === 'ready') {
+    sd.chimes = 'done';
+    startDialog([
+      { name: '狩人トキ', text: '……全部、見つけてきたのか。' },
+      { name: '狩人トキ', text: 'あれは風見の民が、行方知れずの身内を待つために吊るしたものだ。鳴るたび「まだ帰らない」と数えるための。' },
+      { name: '狩人トキ', text: '礼を言う。……これを。獣の胆を煮詰めた薬だ。腹に入れておけば、少しは死ににくくなる。' },
+    ], () => {
+      player.maxHp += 4;
+      player.hp = player.maxHp;
+      renderHearts();
+      flashVignette(true);
+      showNotice('体力の上限が上がった', 3);
+      refreshSideQuestUI();
+      saveGame();
+    });
+    return;
+  }
+  // --- 受注 ---
+  if (sd.hunt === 'none') {
+    startDialog([...(sd.met ? [] : TOKI_FIRST), 
+      { name: '狩人トキ', text: '岩背獣という獣がいる。背に岩を生やした猪だ。近ごろ影の気配に当てられて気が立っていてな、この辺りを走り回っている。' },
+      { name: '狩人トキ', text: '三頭。それだけ減らしてくれれば、私の獲物場が戻る。……礼はする。悪くない得物を一本、預けよう。' },
+      { name: '狩人トキ', text: '溜めてから真っ直ぐ突っ込んでくる。避けてから横を叩け。正面で受けるな、死ぬぞ。' },
+    ], () => {
+      sd.met = true;
+      sd.hunt = 'active';
+      showNotice('依頼:牙を折る\n岩背獣を3頭退ける', 3.5);
+      refreshSideQuestUI();
+      saveGame();
+    });
+    return;
+  }
+  if (sd.hunt === 'active') {
+    startDialog([{ name: '狩人トキ', text: `あと ${HUNT_TARGET - sd.huntKills} 頭だ。正面で受けるなよ。` }]);
+    return;
+  }
+  if (sd.chimes === 'none') {
+    startDialog([
+      { name: '狩人トキ', text: 'もう一つ、頼まれてくれるか。……これは私の私事だ。' },
+      { name: '狩人トキ', text: 'この草原には、風鈴が三つ吊るされている。風見の民が遺したものだ。私は探しているが、獣を追いながらでは手が回らない。' },
+      { name: '狩人トキ', text: '見つけたら、外して持ってきてくれ。……もう、鳴らし続ける必要はないんだ。' },
+    ], () => {
+      sd.chimes = 'active';
+      showNotice('依頼:風鈴の在り処\n三つの風鈴を見つける', 3.5);
+      refreshSideQuestUI();
+      saveGame();
+    });
+    return;
+  }
+  if (sd.chimes === 'active') {
+    startDialog([{ name: '狩人トキ', text: `風鈴は ${CHIME_TARGET - chimeCount()} つ残っている。風の音をよく聴け。人の手が入った場所にある。` }]);
+    return;
+  }
+  if (sd.summit === 'none') {
+    startDialog([
+      { name: '狩人トキ', text: '最後に一つ。これは依頼じゃない、忠告だ。' },
+      { name: '狩人トキ', text: '東の高峰――「風見の頂」に、石塚がある。百年前、影を食い止めて死んだ騎士たちの墓だ。' },
+      { name: '狩人トキ', text: '頂には剣が一振り、突き立ったままだ。誰も抜けなかった。……あんたなら、抜けるかもしれん。' },
+    ], () => {
+      sd.summit = 'active';
+      showNotice('依頼:風見の頂\n東の高峰に登る', 3.5);
+      refreshSideQuestUI();
+      saveGame();
+    });
+    return;
+  }
+  if (sd.summit === 'active') {
+    startDialog([{ name: '狩人トキ', text: '東の高峰だ。登れば分かる。風がいちばん強い場所だからな。' }]);
+    return;
+  }
+  startDialog([
+    { name: '狩人トキ', text: '獲物場は戻った。風鈴も鳴り止んだ。……あんたのおかげだ。' },
+    { name: '狩人トキ', text: '行け。私はここで、あんたが戻るのを待つ。それくらいはできる。' },
+  ]);
+}
+addInteract(LOC.toki, 3.5, '話す', tokiDialog, () => !dialogState.active);
+
 // ボス
 let boss = null;
 function checkBossTrigger() {
@@ -1572,6 +2233,61 @@ function onBossDefeated() {
 // ------------------------------------------------------------
 let shake = 0;
 let hitStop = 0;
+
+// ------------------------------------------------------------
+// 武器
+// ------------------------------------------------------------
+const WEAPONS = {
+  sword: {
+    name: '旅人の剣', mark: '⚔', dmg: 1, range: 2.6, arc: 0.25,
+    time: 0.42, windup: 0.28, stam: 0, knock: 6, arcScale: 1, pitch: 1,
+    desc: '軽く、素早い。手が憶えている重さ。',
+  },
+  spear: {
+    name: '風薙の槍', mark: '⟋', dmg: 1, range: 4.3, arc: 0.62,
+    time: 0.5, windup: 0.34, stam: 6, knock: 8, arcScale: 1.5, pitch: 1.25, multi: 2,
+    desc: '間合いは長く、狙いは細い。突けば二度刺さる。',
+  },
+  great: {
+    name: '古の大剣', mark: '⛨', dmg: 3, range: 3.2, arc: -0.15,
+    time: 0.8, windup: 0.45, stam: 16, knock: 13, arcScale: 1.25, pitch: 0.55,
+    desc: '重い。振り抜けば、影ごと薙ぐ。',
+  },
+};
+const WEAPON_ORDER = ['sword', 'spear', 'great'];
+function setWeapon(key, silent = false) {
+  if (!WEAPONS[key] || !player.weapons[key]) return;
+  player.weapon = key;
+  for (const k of WEAPON_ORDER) hero.weapons[k].visible = (k === key);
+  const w = WEAPONS[key];
+  ui.weaponName.textContent = w.name;
+  ui.weaponMark.textContent = w.mark;
+  if (!silent) { audio.blip(520 * w.pitch, 0.08, 0.05, 'triangle'); saveGame(); }
+}
+function cycleWeapon() {
+  const owned = WEAPON_ORDER.filter(k => player.weapons[k]);
+  if (owned.length < 2) { showNotice('まだ他の武器を持っていない', 1.4); return; }
+  const i = owned.indexOf(player.weapon);
+  setWeapon(owned[(i + 1) % owned.length]);
+  showNotice(WEAPONS[player.weapon].name, 1.3);
+}
+function grantWeapon(key) {
+  if (player.weapons[key]) return;
+  player.weapons[key] = true;
+  setWeapon(key, true);
+  audio.shard();
+  showNotice(`${WEAPONS[key].name} を手に入れた\n${WEAPONS[key].desc}`, 4.5);
+  saveGame();
+}
+addEventListener('keydown', e => {
+  if (!game.started || dialogState.active || narrationState.active) return;
+  if (e.code === 'KeyQ') cycleWeapon();
+  const n = { Digit1: 'sword', Digit2: 'spear', Digit3: 'great' }[e.code];
+  if (n) {
+    if (player.weapons[n]) { setWeapon(n); showNotice(WEAPONS[n].name, 1.3); }
+    else showNotice('まだ持っていない武器だ', 1.4);
+  }
+});
 function tryRoll() {
   if (player.rollT > 0 || player.attackT > 0 || player.dead || !player.onGround) return;
   if (dialogState.active || narrationState.active || !game.started) return;
@@ -1581,12 +2297,8 @@ function tryRoll() {
   player.rollT = 0.42;
   player.invulnT = Math.max(player.invulnT, 0.5);
   // 入力方向、なければ前方
-  let ix = 0, iz = 0;
-  if (keys['KeyW']) iz -= 1;
-  if (keys['KeyS']) iz += 1;
-  if (keys['KeyA']) ix -= 1;
-  if (keys['KeyD']) ix += 1;
-  if (ix || iz) {
+  const { ix, iz } = readMoveInput();
+  if (Math.hypot(ix, iz) > 0.15) {
     const len = Math.hypot(ix, iz);
     const sy = Math.sin(cam.yaw), cy = Math.cos(cam.yaw);
     player.rollDir.set((ix * cy + iz * sy) / len, 0, (-ix * sy + iz * cy) / len);
@@ -1598,37 +2310,52 @@ function tryRoll() {
 }
 function tryAttack() {
   if (player.attackT > 0 || player.dead || dialogState.active || narrationState.active) return;
-  if (player.rollT > 0) return;
-  player.attackT = 0.42;
-  player.attackCombo = (player.attackCombo + 1) % 2;
-  audio.sword();
-  // ダッシュ中は踏み込み斬り
-  if ((keys['ShiftLeft'] || keys['ShiftRight']) && !player.exhausted) {
-    player.vel.x += Math.sin(player.yaw) * 7;
-    player.vel.z += Math.cos(player.yaw) * 7;
+  if (player.rollT > 0 || !game.started) return;
+  const w = WEAPONS[player.weapon];
+  if (w.stam > 0 && (player.exhausted || player.stamina < w.stam)) {
+    audio.blip(150, 0.1, 0.04, 'square');
+    return;
   }
-  // ヒット判定
-  for (const e of enemies) {
-    if (e.dead) continue;
-    _v1.subVectors(e.pos, player.pos);
-    const dist = _v1.length();
-    if (dist > 2.6 + e.radius) continue;
-    _v1.normalize();
-    _v2.set(Math.sin(player.yaw), 0, Math.cos(player.yaw));
-    if (_v1.dot(_v2) < 0.25) continue;
-    damageEnemy(e, 1);
+  if (w.stam > 0) { player.stamina -= w.stam; player.staminaRegenDelay = 0.7; }
+  player.attackT = w.time;
+  player.attackDur = w.time;
+  player.hitT = w.time * w.windup;
+  player.attackCombo = (player.attackCombo + 1) % 2;
+  audio.sword(w.pitch);
+  // ダッシュ中は踏み込み斬り
+  if ((keys['ShiftLeft'] || keys['ShiftRight'] || touch.stick.mag > 0.88) && !player.exhausted) {
+    const lunge = player.weapon === 'great' ? 4 : 7;
+    player.vel.x += Math.sin(player.yaw) * lunge;
+    player.vel.z += Math.cos(player.yaw) * lunge;
   }
 }
-function damageEnemy(e, amount) {
+// 溜めの後に実際の判定を行う(武器ごとの間合い・薙ぎ角)
+function doAttackHit() {
+  const w = WEAPONS[player.weapon];
+  _v2.set(Math.sin(player.yaw), 0, Math.cos(player.yaw));
+  let hits = 0;
+  for (const e of enemies) {
+    if (e.dead) continue;
+    _v1.subVectors(e.pos, player.pos).setY(0);
+    if (_v1.length() > w.range + e.radius) continue;
+    _v1.normalize();
+    if (_v1.dot(_v2) < w.arc) continue;
+    damageEnemy(e, w.dmg, w.knock);
+    if (++hits >= (w.multi ?? 99)) break;
+  }
+  if (hits === 0) audio.noiseBurst(0.1, 900, 0.03, 0.6);
+}
+function damageEnemy(e, amount, knock = 6) {
   e.hp -= amount;
   e.hurtT = 0.25;
   hitStop = Math.max(hitStop, 0.06);
   audio.hit();
   shake = Math.max(shake, 0.15);
   _v1.copy(e.pos).y += 1;
-  spawnParticles(_v1, 12, e.type === 'slime' ? 0x9ad84a : 0x8a2aff, 5, 0.5, 2.5);
+  spawnParticles(_v1, 12, ENEMY_COLOR[e.type], 5, 0.5, 2.5);
   // ノックバック
-  _v2.subVectors(e.pos, player.pos).setY(0).normalize().multiplyScalar(e.type === 'boss' ? 1.5 : 6);
+  _v2.subVectors(e.pos, player.pos).setY(0).normalize()
+    .multiplyScalar(e.type === 'boss' ? knock * 0.25 : knock);
   e.vel.add(_v2);
   if (e.type === 'boss') {
     ui.bossFill.style.width = `${Math.max(0, e.hp / e.maxHp) * 100}%`;
@@ -1648,8 +2375,9 @@ function damageEnemy(e, amount) {
     hitStop = Math.max(hitStop, 0.11);
     audio.kill();
     _v1.copy(e.pos).y += 1;
-    spawnParticles(_v1, 30, e.type === 'slime' ? 0x9ad84a : 0xb86aff, 6, 1, 3);
+    spawnParticles(_v1, 30, ENEMY_COLOR[e.type], 6, 1, 3);
     if (e.type !== 'boss' && Math.random() < 0.45) dropHeart(e.pos);
+    onEnemyKilled(e);
     if (e.type === 'boss') onBossDefeated();
   }
 }
@@ -1659,7 +2387,7 @@ addEventListener('mousedown', e => {
   if (narrationState.active) return; // ナレーションはオーバーレイのクリックで進む
   if (dialogState.active) { advanceDialog(); return; }
   if (player.dead) return;
-  if (!pointerLocked) {
+  if (!pointerLocked && !IS_TOUCH) {
     renderer.domElement.requestPointerLock?.();
     return;
   }
@@ -1669,17 +2397,17 @@ addEventListener('mousedown', e => {
 addEventListener('contextmenu', e => e.preventDefault());
 addEventListener('keydown', e => { if (e.code === 'KeyC') tryRoll(); });
 
-addEventListener('keydown', e => {
-  if (e.code === 'KeyE' && game.started && !player.dead) {
-    if (dialogState.active) { advanceDialog(); return; }
-    if (narrationState.active) { if (narrationState.ready) nextNarration(); return; }
-    if (performance.now() < interactBlockUntil) return;
-    for (const it of interactables) {
-      if (!it.enabled()) continue;
-      if (player.pos.distanceTo(it.pos) < it.r) { it.onUse(); break; }
-    }
+function tryInteract() {
+  if (!game.started || player.dead) return;
+  if (dialogState.active) { advanceDialog(); return; }
+  if (narrationState.active) { if (narrationState.ready) nextNarration(); return; }
+  if (performance.now() < interactBlockUntil) return;
+  for (const it of interactables) {
+    if (!it.enabled()) continue;
+    if (player.pos.distanceTo(it.pos) < it.r) { it.onUse(); break; }
   }
-});
+}
+addEventListener('keydown', e => { if (e.code === 'KeyE') tryInteract(); });
 
 // ------------------------------------------------------------
 // 敵の更新
@@ -1716,12 +2444,56 @@ function updateEnemies(dt, time) {
       _v1.subVectors(player.pos, e.pos).setY(0);
       const d = _v1.length();
       _v1.normalize();
-      e.yaw = Math.atan2(_v1.x, _v1.z);
-      const stop = e.type === 'boss' ? 3.4 : 1.5;
-      if (d > stop) { mvx = _v1.x * e.speed; mvz = _v1.z * e.speed; }
-      else if (e.attackCd <= 0) {
-        e.attackCd = e.type === 'boss' ? 1.4 : 1.2;
-        damagePlayer(e.dmg, e.pos);
+      if (e.chargeT <= 0) e.yaw = Math.atan2(_v1.x, _v1.z);
+
+      if (e.type === 'wisp') {
+        // 一定の間合いを保ちながら火の玉を放つ
+        const want = 11;
+        const drift = d < want - 2 ? -1 : d > want + 3 ? 1 : 0;
+        mvx = _v1.x * e.speed * drift;
+        mvz = _v1.z * e.speed * drift;
+        // 横滑り(狙いを絞らせない)
+        mvx += -_v1.z * e.speed * 0.5 * Math.sin(e.t * 0.9);
+        mvz += _v1.x * e.speed * 0.5 * Math.sin(e.t * 0.9);
+        if (e.attackCd <= 0 && d < 26) {
+          e.attackCd = e.cd;
+          _v3.copy(player.pos).setY(player.pos.y + 1.1).sub(_v2.copy(e.pos).setY(e.pos.y + 1.5)).normalize();
+          _v3.y += 0.12;
+          spawnProjectile(_v2, _v3.normalize(), 15, e.dmg);
+          audio.blip(340, 0.18, 0.05, 'sawtooth');
+        }
+      } else if (e.type === 'charger') {
+        if (e.chargeT > 0) {
+          // 突進中(方向固定・停止不能)
+          e.chargeT -= dt;
+          mvx = e.chargeDir.x * 17;
+          mvz = e.chargeDir.z * 17;
+          if (d < 2.2 + e.radius && e.attackCd <= 0) {
+            e.attackCd = e.cd;
+            damagePlayer(e.dmg, e.pos);
+            e.chargeT = 0;
+          }
+        } else if (e.windT > 0) {
+          // 溜め(前脚で地を掻く)
+          e.windT -= dt;
+          if (e.windT <= 0) {
+            e.chargeT = 1.1;
+            e.chargeDir.copy(_v1);
+            audio.noiseBurst(0.3, 260, 0.1, 0.4);
+          }
+        } else if (d < 16 && e.attackCd <= 0) {
+          e.windT = 0.7;
+          audio.blip(90, 0.3, 0.07, 'sawtooth');
+        } else if (d > 2.4) {
+          mvx = _v1.x * e.speed; mvz = _v1.z * e.speed;
+        }
+      } else {
+        const stop = e.type === 'boss' ? 3.4 : 1.5;
+        if (d > stop) { mvx = _v1.x * e.speed; mvz = _v1.z * e.speed; }
+        else if (e.attackCd <= 0) {
+          e.attackCd = e.cd;
+          damagePlayer(e.dmg, e.pos);
+        }
       }
     } else {
       // うろうろ
@@ -1759,6 +2531,26 @@ function updateEnemies(dt, time) {
       g.position.y += Math.sin(time * 2 + e.t * 7) * 0.1 + 0.15;
       if (e.model.armR) e.model.armR.rotation.x = e.attackCd > 0.9 ? -2.2 : Math.sin(time * 3) * 0.2 - 0.3;
       if (e.model.armL) e.model.armL.rotation.x = Math.sin(time * 3 + 1) * 0.2 - 0.3;
+    } else if (e.type === 'wisp') {
+      g.position.y += 0.4 + Math.sin(time * 1.6 + e.t * 2) * 0.35;
+      const pulse = 1 + Math.sin(time * 6 + e.t) * 0.12;
+      e.model.core.scale.setScalar(pulse);
+      e.model.halo.scale.setScalar(1 + Math.sin(time * 3 + e.t) * 0.14);
+      e.model.core.rotation.y += dt * 1.6;
+      e.model.core.rotation.x += dt * 0.9;
+    } else if (e.type === 'charger') {
+      const gait = time * (e.chargeT > 0 ? 18 : 7);
+      e.model.legs.forEach((leg, k) => {
+        leg.rotation.x = Math.sin(gait + (k % 2) * Math.PI) * (e.state === 'chase' ? 0.65 : 0.15);
+      });
+      if (e.windT > 0) {
+        // 溜め中は身を低くして震える
+        g.position.y -= 0.12;
+        g.position.x += rand(0.05, -0.05);
+        e.model.head.position.y = 0.78;
+      } else {
+        e.model.head.position.y = 0.92 + Math.sin(time * 3) * 0.04;
+      }
     } else if (e.type === 'boss') {
       const gait = time * 7;
       e.model.legs.forEach((leg, k) => {
@@ -1785,14 +2577,10 @@ function updatePlayer(dt) {
 
   // 入力ベクトル(カメラ基準)
   let ix = 0, iz = 0;
-  if (!inCutscene) {
-    if (keys['KeyW']) iz -= 1;
-    if (keys['KeyS']) iz += 1;
-    if (keys['KeyA']) ix -= 1;
-    if (keys['KeyD']) ix += 1;
-  }
-  const moving = (ix !== 0 || iz !== 0);
-  const wantSprint = keys['ShiftLeft'] || keys['ShiftRight'];
+  if (!inCutscene) ({ ix, iz } = readMoveInput());
+  const inMag = Math.min(1, Math.hypot(ix, iz));
+  const moving = inMag > 0.15;
+  const wantSprint = keys['ShiftLeft'] || keys['ShiftRight'] || touch.stick.mag > 0.88;
 
   // スタミナ
   const sprinting = moving && wantSprint && !player.exhausted && player.stamina > 0 && player.onGround;
@@ -1810,7 +2598,7 @@ function updatePlayer(dt) {
     ? 'linear-gradient(90deg,#d84a3a,#e8973f)' : 'linear-gradient(90deg,#7ddf6a,#b7e86a)';
   ui.stamina.style.opacity = (player.stamina >= 99.5) ? '0' : '1';
 
-  const speed = sprinting ? 10.2 : 5.8;
+  const speed = (sprinting ? 10.2 : 5.8) * (touch.stick.mag > 0 ? Math.max(0.35, inMag) : 1);
   let mx = 0, mz = 0;
   if (moving) {
     const len = Math.hypot(ix, iz);
@@ -1830,7 +2618,7 @@ function updatePlayer(dt) {
 
   // 回避ロール
   if (player.rollT > 0) {
-    player.rollT -= dt;
+    player.rollT = Math.max(0, player.rollT - dt);
     const rollSpeed = 13 * smoothstep(0, 0.12, player.rollT);
     mx = player.rollDir.x * rollSpeed;
     mz = player.rollDir.z * rollSpeed;
@@ -1903,20 +2691,37 @@ function updatePlayer(dt) {
     hero.armR.rotation.z = 0;
     slashArc.material.opacity = Math.max(0, slashArc.material.opacity - dt * 6);
   } else {
-    // 攻撃モーション
-    player.attackT -= dt;
-    const t = 1 - player.attackT / 0.42;
+    // 攻撃モーション(武器ごとに溜め・振り抜きの長さが変わる)
+    player.attackT = Math.max(0, player.attackT - dt);
+    if (player.hitT > 0) {
+      player.hitT -= dt;
+      if (player.hitT <= 0) doAttackHit();
+    }
+    const wp = WEAPONS[player.weapon];
+    const t = 1 - player.attackT / player.attackDur;
     const dir = player.attackCombo === 0 ? 1 : -1;
-    if (t < 0.3) {
-      hero.armR.rotation.x = lerp(0, -2.4, t / 0.3);
-      hero.armR.rotation.z = lerp(0, -0.5 * dir, t / 0.3);
+    const wind = wp.windup;
+    if (player.weapon === 'spear') {
+      // 突き:腕を引いてから真っ直ぐ伸ばす
+      const s = t < wind ? -(t / wind) * 0.5 : Math.min(1, (t - wind) / (1 - wind) * 1.8);
+      hero.armR.rotation.x = lerp(0, -1.5, Math.max(s, 0)) + Math.min(s, 0) * 0.8;
+      hero.armR.rotation.z = 0;
+      slashArc.material.opacity = Math.max(0, (s > 0 ? 0.4 : 0) - s * 0.5);
+      slashArc.rotation.z = 0;
+    } else if (t < wind) {
+      // 振りかぶり
+      const k = t / wind;
+      hero.armR.rotation.x = lerp(0, -2.6, k);
+      hero.armR.rotation.z = lerp(0, -0.6 * dir, k);
     } else {
-      const s = (t - 0.3) / 0.7;
-      hero.armR.rotation.x = lerp(-2.4, 0.7, Math.min(1, s * 1.6));
-      hero.armR.rotation.z = lerp(-0.5 * dir, 0.7 * dir, Math.min(1, s * 1.6));
-      slashArc.material.opacity = Math.max(0, 0.55 - s * 0.8);
+      // 振り抜き
+      const s = (t - wind) / (1 - wind);
+      hero.armR.rotation.x = lerp(-2.6, 0.8, Math.min(1, s * 1.6));
+      hero.armR.rotation.z = lerp(-0.6 * dir, 0.8 * dir, Math.min(1, s * 1.6));
+      slashArc.material.opacity = Math.max(0, 0.6 - s * 0.85);
       slashArc.rotation.z = -s * 2.4 * dir;
     }
+    slashArc.scale.setScalar(wp.arcScale);
   }
   // アイドル呼吸
   if (w < 0.05 && player.attackT <= 0) {
@@ -2118,7 +2923,7 @@ function updateBirds(time) {
 // ------------------------------------------------------------
 // ホタル(夜の草原に灯る)
 // ------------------------------------------------------------
-const FIREFLY_N = 90;
+const FIREFLY_N = LOW_SPEC ? 45 : 90;
 const fireflies = (() => {
   const geo = new THREE.BufferGeometry();
   const pos = new Float32Array(FIREFLY_N * 3);
@@ -2206,6 +3011,10 @@ function saveGame() {
       shards: game.shards,
       bossDefeated: game.bossDefeated,
       hp: player.hp,
+      maxHp: player.maxHp,
+      weapon: player.weapon,
+      weapons: player.weapons,
+      side: game.side,
       pos: [player.pos.x, player.pos.z],
       time: game.time,
     }));
@@ -2222,10 +3031,19 @@ let saveTimer = 0;
 ui.loading.classList.add('hidden');
 
 const contBtn = document.getElementById('contBtn');
-{
-  const sv = loadSaveData();
-  if (sv && sv.quest && sv.quest !== 'intro') contBtn.style.display = '';
+// 本編が進んでいなくても、依頼・武器・強化のいずれかが進んでいれば続きから再開できる
+function hasProgress(sv) {
+  if (!sv) return false;
+  if (sv.quest && sv.quest !== 'intro') return true;
+  if (sv.bossDefeated) return true;
+  if (sv.shards && Object.values(sv.shards).some(Boolean)) return true;
+  if (sv.weapons && (sv.weapons.spear || sv.weapons.great)) return true;
+  if (sv.maxHp && sv.maxHp > 10) return true;
+  const sd = sv.side;
+  if (sd && ['hunt', 'chimes', 'summit'].some(k => sd[k] && sd[k] !== 'none')) return true;
+  return false;
 }
+if (hasProgress(loadSaveData())) contBtn.style.display = '';
 contBtn.addEventListener('click', () => {
   const sv = loadSaveData();
   if (!sv) return;
@@ -2236,6 +3054,17 @@ contBtn.addEventListener('click', () => {
   game.bossDefeated = !!sv.bossDefeated;
   game.time = sv.time ?? game.time;
   for (const k of ['A', 'B', 'C']) if (game.shards[k]) scene.remove(shards[k]);
+  // 依頼・武器・強化の復元
+  if (sv.side) {
+    Object.assign(game.side, sv.side);
+    game.side.chimeFound = sv.side.chimeFound || {};
+    for (const k of [1, 2, 3]) if (game.side.chimeFound[k]) scene.remove(chimes[k].group);
+    if (game.side.summit === 'done') scene.remove(summitCairn.group);
+  }
+  if (sv.weapons) Object.assign(player.weapons, sv.weapons);
+  player.maxHp = sv.maxHp ?? player.maxHp;
+  setWeapon(player.weapons[sv.weapon] ? sv.weapon : 'sword', true);
+  refreshSideQuestUI();
   player.hp = clamp(sv.hp ?? 10, 1, player.maxHp);
   if (Array.isArray(sv.pos)) {
     player.pos.set(sv.pos[0], 0, sv.pos[1]);
@@ -2243,6 +3072,7 @@ contBtn.addEventListener('click', () => {
   }
   game.started = true;
   ui.hud.classList.add('show');
+  showTouchUI();
   renderHearts();
   updateQuest(game.bossDefeated ? 'ending' : sv.quest);
   showNotice('旅の続きへ', 2.5);
@@ -2260,7 +3090,10 @@ document.getElementById('startBtn').addEventListener('click', () => {
   ], () => {
     game.started = true;
     ui.hud.classList.add('show');
+    showTouchUI();
     renderHearts();
+    setWeapon('sword', true);
+    refreshSideQuestUI();
     updateQuest('intro');
     showNotice('草原で目を覚ました', 3);
     renderer.domElement.requestPointerLock?.();
@@ -2270,26 +3103,36 @@ document.getElementById('startBtn').addEventListener('click', () => {
 // ------------------------------------------------------------
 // 自動品質調整(平均FPSが低ければ段階的に軽量化)
 // ------------------------------------------------------------
-const quality = { level: 0, accum: 0, frames: 0, timer: 0 };
-function checkQuality(dt) {
-  if (quality.level >= 3) return;
-  quality.accum += dt; quality.frames++; quality.timer += dt;
-  if (quality.timer < 4) return;
-  const avgFps = quality.frames / quality.accum;
-  quality.accum = quality.frames = quality.timer = 0;
-  if (avgFps >= 40) return;
-  quality.level++;
-  if (quality.level === 1) {
-    bloomPass.enabled = false;
-  } else if (quality.level === 2) {
-    renderer.setPixelRatio(1);
-    composer.setSize(innerWidth, innerHeight);
-  } else if (quality.level === 3) {
-    grassGeo.instanceCount = Math.floor(GRASS_COUNT / 2.5);
-    sun.shadow.mapSize.set(1024, 1024);
-    sun.shadow.map?.dispose();
-    sun.shadow.map = null;
+const quality = { level: LOW_SPEC ? 1 : 0, accum: 0, frames: 0, timer: 0, real: 0 };
+function applyQuality(level) {
+  while (quality.level < level) {
+    quality.level++;
+    if (quality.level === 1) {
+      bloomPass.enabled = false;
+    } else if (quality.level === 2) {
+      renderer.setPixelRatio(1);
+      composer.setSize(innerWidth, innerHeight);
+    } else if (quality.level === 3) {
+      grassGeo.instanceCount = Math.floor(GRASS_COUNT / 2.5);
+      sun.shadow.mapSize.set(1024, 1024);
+      sun.shadow.map?.dispose();
+      sun.shadow.map = null;
+    } else if (quality.level === 4) {
+      grassGeo.instanceCount = Math.floor(GRASS_COUNT / 6);
+      renderer.shadowMap.enabled = false;
+      fireflies.points.visible = false;
+    }
   }
+}
+function checkQuality(dtReal) {
+  if (quality.level >= 4) return;
+  quality.frames++; quality.real += dtReal;
+  if (quality.real < 3) return;
+  const avgFps = quality.frames / quality.real;
+  quality.frames = quality.real = 0;
+  if (avgFps >= 40) return;
+  // 極端に重い環境では一気に下げる
+  applyQuality(avgFps < 12 ? 4 : avgFps < 24 ? quality.level + 2 : quality.level + 1);
 }
 
 // ------------------------------------------------------------
@@ -2300,7 +3143,8 @@ let elapsed = 0;
 
 function animate() {
   requestAnimationFrame(animate);
-  let dt = Math.min(clock.getDelta(), 0.05);
+  const dtReal = Math.min(clock.getDelta(), 0.25);
+  let dt = Math.min(dtReal, 0.05);
   if (hitStop > 0) { hitStop -= dt; dt *= 0.12; }   // ヒットストップ(手応え)
   elapsed += dt;
   if (game.started) game.playTime += dt;
@@ -2317,6 +3161,7 @@ function animate() {
   updateCamera(dt);
   updateEnemies(dt, elapsed);
   updateParticles(dt);
+  updateProjectiles(dt);
   updatePickups(dt, elapsed);
   updatePrompt();
   updateCompass();
@@ -2324,15 +3169,26 @@ function animate() {
   updateBirds(elapsed);
   checkBossTrigger();
   if (game.started) {
-    checkQuality(dt);
+    checkQuality(dtReal);
     saveTimer += dt;
     if (saveTimer > 5) { saveTimer = 0; saveGame(); }
   }
 
   // NPCがプレイヤーの方を向く
-  if (npc && player.pos.distanceTo(npc.position) < 12) {
-    const targetYaw = Math.atan2(player.pos.x - npc.position.x, player.pos.z - npc.position.z);
-    npc.rotation.y = lerp(npc.rotation.y, targetYaw, dt * 4);
+  for (const person of [npc, toki]) {
+    if (person && player.pos.distanceTo(person.position) < 12) {
+      const targetYaw = Math.atan2(player.pos.x - person.position.x, player.pos.z - person.position.z);
+      person.rotation.y = lerp(person.rotation.y, targetYaw, dt * 4);
+    }
+  }
+  // 風鈴が風に揺れる
+  for (const k of [1, 2, 3]) {
+    const c = chimes[k];
+    if (!c.group.parent) continue;
+    const sway = Math.sin(elapsed * 1.7 + k) * 0.16 + Math.sin(elapsed * 4.3 + k) * 0.05;
+    c.bell.rotation.z = sway;
+    c.paper.rotation.z = sway * 1.5;
+    c.paper.rotation.y = Math.sin(elapsed * 2.1 + k) * 0.5;
   }
   // 焚き火の揺らぎ
   const fire = npc.userData.fire;
@@ -2349,10 +3205,19 @@ function animate() {
   for (const b of Object.values(beams)) {
     if (b.visible) b.material.opacity = 0.22 + Math.sin(elapsed * 2.2) * 0.08;
   }
+  for (const b of Object.values(sideBeams)) {
+    if (b.visible) b.material.opacity = 0.16 + Math.sin(elapsed * 1.6) * 0.06;
+  }
 
   composer.render();
 }
 animate();
 
 // 開発用フック(自動テスト・デバッグ)
-window.__debug = { game, player, LOC, enemies, cam, collectShard, updateQuest, damageEnemy };
+window.__debug = {
+  game, player, LOC, enemies, cam, touch, projectiles,
+  collectShard, updateQuest, damageEnemy, spawnEnemy, setWeapon, grantWeapon,
+  tokiDialog, collectChime, refreshSideQuestUI, WEAPONS,
+  readMoveInput, quality, chimes, tryAttack, tryRoll, tryInteract, cycleWeapon,
+  terrainHeight, SPAWN, camera, scene,
+};
