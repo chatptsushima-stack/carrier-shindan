@@ -841,7 +841,7 @@ function buildHero() {
   g.add(pack);
 
   g.traverse(o => { if (o.isMesh) o.castShadow = true; });
-  return { group: g, armL, armR, legL, legR, head, sword, weapons: { sword, spear, great } };
+  return { group: g, armL, armR, legL, legR, head, sword, mount, weapons: { sword, spear, great } };
 }
 const hero = buildHero();
 hero.group.rotation.order = 'YXZ';   // ロール回転(X)をヨー(Y)の後に適用
@@ -1575,6 +1575,10 @@ if (IS_TOUCH) {
   setupTouch();
   const hint = document.querySelector('#title .hint');
   if (hint) hint.innerHTML = '左半分をなぞって移動／右側をドラッグで視点<br>右下のボタンで攻撃・回避・調べる';
+  const next = document.querySelector('#dialog .next');
+  if (next) next.textContent = '▼ タップで次へ';
+  const skip = document.querySelector('#narration .skip');
+  if (skip) skip.textContent = 'タップで進む';
 }
 addEventListener('mousemove', e => {
   if (!pointerLocked) return;
@@ -1604,6 +1608,7 @@ const ui = {
   sidequestText: document.querySelector('#sidequest .text'),
   weaponName: document.querySelector('#weapon .wname'),
   weaponMark: document.querySelector('#weapon .mark'),
+  weaponAlt: document.querySelector('#weapon .walt'),
   vignette: document.getElementById('vignette'),
   bossbar: document.getElementById('bossbar'),
   bossName: document.querySelector('#bossbar .name'),
@@ -2240,17 +2245,19 @@ let hitStop = 0;
 const WEAPONS = {
   sword: {
     name: '旅人の剣', mark: '⚔', dmg: 1, range: 2.6, arc: 0.25,
-    time: 0.42, windup: 0.28, stam: 0, knock: 6, arcScale: 1, pitch: 1,
+    time: 0.42, windup: 0.28, stam: 0, knock: 6, arcScale: 1, pitch: 1, idle: [0, 0, 0],
     desc: '軽く、素早い。手が憶えている重さ。',
   },
   spear: {
     name: '風薙の槍', mark: '⟋', dmg: 1, range: 4.3, arc: 0.62,
     time: 0.5, windup: 0.34, stam: 6, knock: 8, arcScale: 1.5, pitch: 1.25, multi: 2,
+    idle: [-0.3, 0, -0.16],
     desc: '間合いは長く、狙いは細い。突けば二度刺さる。',
   },
   great: {
     name: '古の大剣', mark: '⛨', dmg: 3, range: 3.2, arc: -0.15,
     time: 0.8, windup: 0.45, stam: 16, knock: 13, arcScale: 1.25, pitch: 0.55,
+    idle: [-0.46, 0, -0.28],
     desc: '重い。振り抜けば、影ごと薙ぐ。',
   },
 };
@@ -2262,6 +2269,9 @@ function setWeapon(key, silent = false) {
   const w = WEAPONS[key];
   ui.weaponName.textContent = w.name;
   ui.weaponMark.textContent = w.mark;
+  // 所持している武器を小さく併記(切替できることが分かるように)
+  const others = WEAPON_ORDER.filter(k => player.weapons[k] && k !== key);
+  ui.weaponAlt.textContent = others.length ? `　/ ${others.map(k => WEAPONS[k].name).join(' / ')}` : '';
   if (!silent) { audio.blip(520 * w.pitch, 0.08, 0.05, 'triangle'); saveGame(); }
 }
 function cycleWeapon() {
@@ -2468,18 +2478,27 @@ function updateEnemies(dt, time) {
           e.chargeT -= dt;
           mvx = e.chargeDir.x * 17;
           mvz = e.chargeDir.z * 17;
+          e.dustT = (e.dustT ?? 0) - dt;
+          if (e.dustT <= 0) { e.dustT = 0.07; spawnParticles(e.pos, 2, 0xbfae90, 2.5, 0.5, 1.4); }
           if (d < 2.2 + e.radius && e.attackCd <= 0) {
             e.attackCd = e.cd;
             damagePlayer(e.dmg, e.pos);
             e.chargeT = 0;
           }
         } else if (e.windT > 0) {
-          // 溜め(前脚で地を掻く)
+          // 溜め(前脚で地を掻き、土煙を上げる)
           e.windT -= dt;
+          e.dustT = (e.dustT ?? 0) - dt;
+          if (e.dustT <= 0) {
+            e.dustT = 0.09;
+            _v3.copy(e.pos).addScaledVector(_v1, 1.2);
+            spawnParticles(_v3, 3, 0xbfae90, 2.2, 0.45, 1.2);
+          }
           if (e.windT <= 0) {
             e.chargeT = 1.1;
             e.chargeDir.copy(_v1);
             audio.noiseBurst(0.3, 260, 0.1, 0.4);
+            spawnParticles(_v3.copy(e.pos), 12, 0xbfae90, 4, 0.7, 1.5);
           }
         } else if (d < 16 && e.attackCd <= 0) {
           e.windT = 0.7;
@@ -2596,7 +2615,8 @@ function updatePlayer(dt) {
   ui.staminaFill.style.width = `${player.stamina}%`;
   ui.staminaFill.style.background = player.exhausted
     ? 'linear-gradient(90deg,#d84a3a,#e8973f)' : 'linear-gradient(90deg,#7ddf6a,#b7e86a)';
-  ui.stamina.style.opacity = (player.stamina >= 99.5) ? '0' : '1';
+  // 演出中はCSS側のフェードに任せる(インライン指定が優先されてしまうため)
+  ui.stamina.style.opacity = inCutscene ? '' : ((player.stamina >= 99.5) ? '0' : '1');
 
   const speed = (sprinting ? 10.2 : 5.8) * (touch.stick.mag > 0 ? Math.max(0.35, inMag) : 1);
   let mx = 0, mz = 0;
@@ -2689,6 +2709,9 @@ function updatePlayer(dt) {
   if (player.attackT <= 0) {
     hero.armR.rotation.x = Math.sin(ph) * 0.6 * w;
     hero.armR.rotation.z = 0;
+    // 待機中は武器ごとの構え(長柄は肩に預けて体を貫かないように)
+    const idle = WEAPONS[player.weapon].idle;
+    hero.mount.rotation.set(Math.PI + idle[0], idle[1], idle[2]);
     slashArc.material.opacity = Math.max(0, slashArc.material.opacity - dt * 6);
   } else {
     // 攻撃モーション(武器ごとに溜め・振り抜きの長さが変わる)
@@ -2698,6 +2721,7 @@ function updatePlayer(dt) {
       if (player.hitT <= 0) doAttackHit();
     }
     const wp = WEAPONS[player.weapon];
+    hero.mount.rotation.set(Math.PI, 0, 0);   // 振る間は素直に握り直す
     const t = 1 - player.attackT / player.attackDur;
     const dir = player.attackCombo === 0 ? 1 : -1;
     const wind = wp.windup;
@@ -2753,11 +2777,12 @@ function updateCamera(dt) {
     camera.lookAt(_v1);
     return;
   }
-  // 会話中はシネマカメラ(二人を横から収める)
+  // 会話中はシネマカメラ(話し相手とプレイヤーを横から収める)
   if (dialogState.active) {
-    _v1.addVectors(npc.position, player.pos).multiplyScalar(0.5);
+    const speaker = player.pos.distanceTo(toki.position) < player.pos.distanceTo(npc.position) ? toki : npc;
+    _v1.addVectors(speaker.position, player.pos).multiplyScalar(0.5);
     _v1.y += 1.5;
-    _v2.subVectors(npc.position, player.pos);
+    _v2.subVectors(speaker.position, player.pos);
     const len = Math.max(_v2.length(), 2);
     _v2.normalize();
     _v3.set(-_v2.z, 0, _v2.x).multiplyScalar(len * 1.4 + 2.5).add(_v1);

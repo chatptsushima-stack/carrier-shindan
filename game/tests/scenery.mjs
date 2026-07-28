@@ -47,6 +47,31 @@ await shot('charger', {
   spawn: [['charger', 0, 6], ['charger', 5, 9]],
 });
 await shot('great', { at: 'camp', dx: 3, dz: 8, yaw: Math.PI, pitch: 0.2, dist: 5, weapon: 'great' });
+
+// 会話中のシネマカメラ(話し相手を正しく写しているか)
+for (const [name, at] of [['dialog_nagi', 'camp'], ['dialog_toki', 'toki']]) {
+  await page.evaluate((a) => {
+    const d = window.__debug;
+    const L = d.LOC[a];
+    d.player.pos.set(L.x + 1.6, d.terrainHeight(L.x + 1.6, L.z + 1.6), L.z + 1.6);
+    d.player.invulnT = 0;
+    d.tryInteract();
+  }, at);
+  await page.evaluate(() => new Promise(res => {
+    let n = 0;
+    const step = () => (++n < 30 ? requestAnimationFrame(step) : res());
+    requestAnimationFrame(step);
+  }));
+  await page.screenshot({ path: `/tmp/scene_${name}.png` });
+  console.log(`  撮影: ${name}`);
+  // 会話を閉じる
+  for (let i = 0; i < 20; i++) {
+    const open = await page.evaluate(() => document.getElementById('dialog').classList.contains('show'));
+    if (!open) break;
+    await page.keyboard.press('KeyE');
+    await page.waitForTimeout(300);
+  }
+}
 await shot('spear', { at: 'camp', dx: 3, dz: 8, yaw: Math.PI, pitch: 0.2, dist: 5, weapon: 'spear' });
 
 r.truthy('撮影中にエラーが出ない', errors.length === 0);
